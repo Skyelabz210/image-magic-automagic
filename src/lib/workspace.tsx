@@ -122,7 +122,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const [enh, ent, mask] = await Promise.all([blobUrl(result.enhanced), blobUrl(result.entropy), blobUrl(result.mask)]);
     setEnhancement(result);
     setEnhancedFor(`${t}|${s}`);
-    setLayerUrls((u) => ({ original: u.original, enhanced: enh, entropy: ent, mask }));
+    setLayerUrls((u) => ({ ...(u.original ? { original: u.original } : {}), enhanced: enh, entropy: ent, mask }));
     const png = await pngHash(result.enhanced);
     await record("enhance", { algorithm: ALGORITHM_VERSION, threshold: t, strength: s, meanEntropy: +result.meanEntropy.toFixed(4), activePercent: +result.activePercent.toFixed(2), clippedPixels: result.clippedPixels, outputSha256: png.hash });
   };
@@ -139,7 +139,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const url = await blobUrl(result.map);
     setProbe((old) => { if (old) URL.revokeObjectURL(old.url); return { type, channel: ch, result, url }; });
     const png = await pngHash(result.map);
-    await record(`probe:${type}`, { channel: ["red", "green", "blue"][ch], count: result.count, outputSha256: png.hash });
+    await record(`probe:${type}`, { channel: ["red", "green", "blue"][ch]!, count: result.count, outputSha256: png.hash });
   };
 
   const runProbe = async (type: ProbeType, ch?: Channel) => {
@@ -170,7 +170,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setBusy("Rendering layers");
       await doEnhance(source.raster, r.tune.threshold, r.tune.strength, signal);
       for (const p of ["keld", "lane", "quantization"] as ProbeType[]) {
-        await record(`probe:${p}`, { channel: ["red", "green", "blue"][channel], count: r.probes[p].count });
+        await record(`probe:${p}`, { channel: ["red", "green", "blue"][channel]!, count: r.probes[p].count });
       }
       const url = await blobUrl(r.probes.quantization.map);
       setProbe({ type: "quantization", channel, result: r.probes.quantization, url });

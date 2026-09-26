@@ -116,9 +116,9 @@ function EnhancePage() {
 
           <Panel title="Recipe" kicker="manual" actions={stale ? <span className="font-mono text-[10px] text-signal">changed · rerun</span> : null}>
             <label className="flex justify-between font-mono text-xs"><span>entropy threshold</span><span className="text-accent">{threshold.toFixed(1)} bits</span></label>
-            <Slider className="mt-2" min={0} max={6.3} step={0.1} value={[threshold]} onValueChange={([v]) => ws.setThreshold(v)} />
+            <Slider className="mt-2" min={0} max={6.3} step={0.1} value={[threshold]} onValueChange={([v]) => ws.setThreshold(v ?? 0)} />
             <label className="mt-5 flex justify-between font-mono text-xs"><span>sharpen strength</span><span className="text-accent">{strength.toFixed(2)}×</span></label>
-            <Slider className="mt-2" min={1} max={3} step={0.05} value={[strength]} onValueChange={([v]) => ws.setStrength(v)} />
+            <Slider className="mt-2" min={1} max={3} step={0.05} value={[strength]} onValueChange={([v]) => ws.setStrength(v ?? 1)} />
             <div className="mt-5 flex gap-2">
               <Button className="flex-1" variant="outline" disabled={!!busy} onClick={() => ws.runEnhance().then(() => setLayer("enhanced"))}>
                 <Play className="h-4 w-4" /> Run enhancement

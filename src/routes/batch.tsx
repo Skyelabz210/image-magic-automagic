@@ -24,7 +24,7 @@ export const Route = createFileRoute("/batch")({
 });
 
 type Item = {
-  id: string; file: File; status: "queued" | "running" | "done" | "error"; step?: string; error?: string;
+  id: string; file: File; status: "queued" | "running" | "done" | "error"; step?: string | undefined; error?: string | undefined;
   thumb?: string; out?: string; blob?: Blob;
   summary?: { threshold: number; strength: number; meanEntropy: number; active: number; clipped: number; bands: number; laneSteps: number; flagged: number; fileHash: string; outHash: string };
 };
@@ -60,7 +60,7 @@ function BatchPage() {
           fileHash, outHash: r.hashes.enhancedPng,
         };
         await ws.record("batch:pipeline", {
-          file: it.file.name, fileSha256: fileHash, rasterSha256: r.hashes.raster, channel: ["red", "green", "blue"][channel],
+          file: it.file.name, fileSha256: fileHash, rasterSha256: r.hashes.raster, channel: ["red", "green", "blue"][channel]!,
           threshold: summary.threshold, strength: summary.strength, keldBands: summary.bands, laneSteps: summary.laneSteps, flaggedBlocks: summary.flagged, outputSha256: summary.outHash,
         });
         patch(it.id, { status: "done", step: undefined, blob: r.enhancedBlob, out: URL.createObjectURL(r.enhancedBlob), summary });
@@ -76,7 +76,7 @@ function BatchPage() {
 
   const exportReport = () => {
     const rows = done.map((x) => ({ file: x.file.name, ...x.summary }));
-    downloadBlob(new Blob([JSON.stringify({ format: "enhance-batch-v1", exportedAt: new Date().toISOString(), channel: ["red", "green", "blue"][channel], items: rows, ledgerHead: ws.ledger.at(-1)?.chain ?? null }, null, 2)], { type: "application/json" }), "enhance-batch-report.json");
+    downloadBlob(new Blob([JSON.stringify({ format: "enhance-batch-v1", exportedAt: new Date().toISOString(), channel: ["red", "green", "blue"][channel]!, items: rows, ledgerHead: ws.ledger.at(-1)?.chain ?? null }, null, 2)], { type: "application/json" }), "enhance-batch-report.json");
   };
 
   return (
