@@ -32,11 +32,13 @@ function EnhancePage() {
   const suggest = useServerFn(suggestSettings);
   const [ai, setAi] = useState<AiSuggestion | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const stale = enhancement && ws.enhancedFor !== `${threshold}|${strength}`;
 
   const askAi = async () => {
     if (!source) return;
     setAiBusy(true);
+    setAiError(null);
     try {
       const metrics: Record<string, string | number> = { width: source.raster.width, height: source.raster.height, currentThreshold: threshold, currentStrength: strength };
       if (enhancement) Object.assign(metrics, { meanEntropy: +enhancement.meanEntropy.toFixed(3), activePercent: +enhancement.activePercent.toFixed(1), clippedPixels: enhancement.clippedPixels });
@@ -45,7 +47,9 @@ function EnhancePage() {
       setAi(r);
       await ws.record("ai-suggest", { threshold: r.threshold ?? "none", strength: r.strength ?? "none" });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "AI suggestion failed.");
+      const m = e instanceof Error ? e.message : "AI suggestion failed.";
+      setAiError(m);
+      toast.error(m);
     } finally {
       setAiBusy(false);
     }
@@ -131,6 +135,7 @@ function EnhancePage() {
             <Button variant="secondary" className="w-full justify-start" disabled={aiBusy} onClick={askAi}>
               <Sparkles className={cn("h-4 w-4 text-primary", aiBusy && "animate-pulse")} /> {aiBusy ? "Analyzing image…" : "Analyze & suggest settings"}
             </Button>
+            {aiError && <p className="mt-3 rounded-md border border-destructive/60 p-2 text-xs text-destructive">{aiError}</p>}
             {ai && (
               <div className="mt-3 space-y-2 text-sm">
                 <p>{ai.summary}</p>

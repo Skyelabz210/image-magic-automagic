@@ -369,20 +369,22 @@ export type AutoTune = {
   rationale: string;
 };
 
-/** Nearest-neighbour downsample for fast parameter search; never used for output. */
+/** Native-resolution sample for parameter search (entropy is scale dependent,
+ * so tiles are copied without resampling): a 3×3 grid of tiles, never used for output. */
 function preview(source: Raster, maxSide: number): Raster {
-  const scale = Math.min(1, maxSide / Math.max(source.width, source.height));
-  if (scale === 1) return source;
-  const width = Math.max(1, Math.round(source.width * scale));
-  const height = Math.max(1, Math.round(source.height * scale));
+  if (source.width * source.height <= maxSide * maxSide) return source;
+  const tile = Math.floor(maxSide / 3);
+  const tw = Math.min(tile, source.width), th = Math.min(tile, source.height);
+  const width = tw * 3, height = th * 3;
   const data = new Uint8ClampedArray(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    const sy = Math.min(source.height - 1, Math.floor(y / scale));
-    for (let x = 0; x < width; x++) {
-      const sx = Math.min(source.width - 1, Math.floor(x / scale));
-      data.set(source.data.subarray((sy * source.width + sx) * 4, (sy * source.width + sx) * 4 + 4), (y * width + x) * 4);
+  for (let gy = 0; gy < 3; gy++)
+    for (let gx = 0; gx < 3; gx++) {
+      const ox = Math.round(((source.width - tw) * gx) / 2), oy = Math.round(((source.height - th) * gy) / 2);
+      for (let y = 0; y < th; y++) {
+        const src = ((oy + y) * source.width + ox) * 4;
+        data.set(source.data.subarray(src, src + tw * 4), ((gy * th + y) * width + gx * tw) * 4);
+      }
     }
-  }
   return { width, height, data };
 }
 
@@ -390,7 +392,7 @@ function preview(source: Raster, maxSide: number): Raster {
  * image) and the strongest sharpening that keeps clipping under 0.5%. */
 export function autoTune(source: Raster): AutoTune {
   validateRaster(source);
-  const small = preview(source, 384);
+  const small = preview(source, 480);
   const base = enhance(small, 0, 1);
   const heats: number[] = [];
   for (let i = 0; i < base.entropy.data.length; i += 4)
