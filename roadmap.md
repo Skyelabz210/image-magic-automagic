@@ -1,9 +1,9 @@
 # Roadmap — ENHANCE! port
 
-- [ ] Pick visual direction (palette, type, layout) for redesign
-- [ ] Port processing engine (entropy enhance, KELD, lane comb, quantization, workers, receipts)
-- [ ] Rebuild pages as routes: Enhance (/), Evidence Lab, Spectral Lab, Receipts
-- [ ] Auto-tune settings per image
-- [ ] Batch processing (many images, full pipeline)
-- [ ] One-click full run (enhance → probe → receipt)
-- [ ] AI suggestions (recommend settings, explain findings)
+- [x] Visual direction: Spectral palette, JetBrains Mono + Work Sans, dashboard panels
+- [x] Port processing engine (entropy enhance, KELD, lane comb, quantization, workers, receipts)
+- [x] Pages: Enhance (/), Evidence Lab, Batch, Spectral Lab, Provenance
+- [x] Auto-tune settings per image
+- [x] Batch processing
+- [x] One-click full run
+- [~] AI suggestions — built; blocked until workspace AI credits are added
