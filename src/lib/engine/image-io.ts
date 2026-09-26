@@ -1,5 +1,5 @@
-import { validateDimensions, type Raster } from "./processing.ts";
-import type { Request, Response } from "./processing.worker.ts";
+import { validateDimensions, type Raster } from "./processing";
+import type { Request, Response } from "./processing.worker";
 
 export function decodeImage(
   url: string,

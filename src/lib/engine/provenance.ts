@@ -1,4 +1,4 @@
-import type { Raster } from "./processing.ts";
+import type { Raster } from "./processing";
 
 export const RECEIPT_KEY = "enhance-session-ledger-v2";
 export const LEGACY_RECEIPT_KEY = "enhance-session-ledger";

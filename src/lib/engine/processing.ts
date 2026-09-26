@@ -358,3 +358,60 @@ export function probe(
   metrics.push({ label: "opaque pixels inspected", value: String(valid) });
   return { map, count, summary, metrics };
 }
+
+export type AutoTune = {
+  threshold: number;
+  strength: number;
+  targetActivePercent: number;
+  predictedClipPercent: number;
+  rationale: string;
+};
+
+/** Nearest-neighbour downsample for fast parameter search; never used for output. */
+function preview(source: Raster, maxSide: number): Raster {
+  const scale = Math.min(1, maxSide / Math.max(source.width, source.height));
+  if (scale === 1) return source;
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const sy = Math.min(source.height - 1, Math.floor(y / scale));
+    for (let x = 0; x < width; x++) {
+      const sx = Math.min(source.width - 1, Math.floor(x / scale));
+      data.set(source.data.subarray((sy * source.width + sx) * 4, (sy * source.width + sx) * 4 + 4), (y * width + x) * 4);
+    }
+  }
+  return { width, height, data };
+}
+
+/** Pick threshold from the entropy distribution (select the busiest ~45% of the
+ * image) and the strongest sharpening that keeps clipping under 0.5%. */
+export function autoTune(source: Raster): AutoTune {
+  validateRaster(source);
+  const small = preview(source, 384);
+  const base = enhance(small, 0, 1);
+  const heats: number[] = [];
+  for (let i = 0; i < base.entropy.data.length; i += 4)
+    if (small.data[i + 3] !== 0) heats.push(base.entropy.data[i]);
+  heats.sort((a, b) => a - b);
+  const maxBits = Math.log2(81);
+  const pct = heats.length ? heats[Math.floor(heats.length * 0.55)] : 0;
+  const threshold = Math.min(6.3, Math.max(0, Math.round(((pct * maxBits) / 255) * 10) / 10));
+  const visible = Math.max(1, heats.length);
+  let strength = 1.2;
+  let clip = 0;
+  for (const s of [2.6, 2.2, 1.9, 1.6, 1.4, 1.2]) {
+    const trial = enhance(small, threshold, s);
+    clip = (trial.clippedPixels * 100) / visible;
+    strength = s;
+    if (clip < 0.5) break;
+  }
+  const flat = base.meanEntropy < 2;
+  return {
+    threshold,
+    strength,
+    targetActivePercent: 45,
+    predictedClipPercent: Math.round(clip * 100) / 100,
+    rationale: `Mean local entropy ${base.meanEntropy.toFixed(2)} bits${flat ? " (low-detail image)" : ""}. Threshold ${threshold} bits selects the busiest ~45% of pixels; strength ${strength} is the strongest setting predicted to clip under 0.5% (${clip.toFixed(2)}%).`,
+  };
+}
