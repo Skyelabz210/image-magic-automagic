@@ -400,7 +400,7 @@ export function autoTune(source: Raster): AutoTune {
   heats.sort((a, b) => a - b);
   const maxBits = Math.log2(81);
   const pct = heats.length ? heats[Math.floor(heats.length * 0.55)] : 0;
-  const threshold = Math.min(6.3, Math.max(0, Math.round(((pct * maxBits) / 255) * 10) / 10));
+  const threshold = Math.min(6.3, Math.max(0, Math.floor(((pct * maxBits) / 255) * 10) / 10));
   const visible = Math.max(1, heats.length);
   let strength = 1.2;
   let clip = 0;
