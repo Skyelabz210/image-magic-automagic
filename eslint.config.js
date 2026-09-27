@@ -37,4 +37,9 @@ export default tseslint.config(
     },
   },
   eslintPluginPrettier,
+  // The unchanged upstream numeric engine intentionally carries @ts-nocheck.
+  {
+    files: ["src/lib/engine/processing.ts"],
+    rules: { "@typescript-eslint/ban-ts-comment": "off" },
+  },
 );
