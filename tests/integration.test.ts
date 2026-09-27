@@ -7,6 +7,7 @@ import { execFileSync } from "node:child_process";
 import sharp from "sharp";
 import { applyTool } from "../src/lib/engine/tools";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
+import { measureRegion } from "../src/lib/engine/region";
 
 test("pixel tools preserve alpha, dimensions and input; median removes a hot pixel", () => {
   const data = new Uint8ClampedArray(3 * 3 * 4);
@@ -25,6 +26,22 @@ test("pixel tools preserve alpha, dimensions and input; median removes a hot pix
   assert.equal(src.data[4 * 4], 255);
   assert.deepEqual([out.width, out.height], [3, 3]);
   assert.throws(() => applyTool(src, { name: "brightness", amount: 256 }), /integer/);
+});
+
+test("regional counts use native coordinates and exclude partially transparent samples", () => {
+  const data = new Uint8ClampedArray([
+    0, 80, 170, 255, 1, 80, 170, 128, 2, 80, 170, 255, 3, 80, 170, 255,
+  ]);
+  const raster = { width: 2, height: 2, data };
+  const row = measureRegion(raster, { x: 0, y: 1, width: 2, height: 1 });
+  assert.equal(row.opaquePixels, 2);
+  assert.equal(row.channels[0].mean, 2.5);
+  assert.equal(row.channels[0].adjacentStepGcd, 1);
+  assert.equal(row.channels[0].unitSteps, 1);
+  assert.equal(row.channels[1].entropy, 0);
+  const whole = measureRegion(raster, { x: 0, y: 0, width: 2, height: 2 });
+  assert.equal(whole.excludedPixels, 1);
+  assert.throws(() => measureRegion(raster, { x: 1, y: 1, width: 2, height: 2 }), /within/);
 });
 
 test("Gemini sends inline preview and extracts only completed model text", async () => {
@@ -91,6 +108,14 @@ test("CLI pipeline produces a PNG and measured output hash", async () => {
     assert.equal(result.outputSha256.length, 64);
     assert.deepEqual([width, height], [3, 3]);
     assert.equal(typeof result.probes.keld, "number");
+    const region = JSON.parse(
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "cli/index.ts", "region", input, "--region", "1,1,1,1"],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(region.measurements.opaquePixels, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

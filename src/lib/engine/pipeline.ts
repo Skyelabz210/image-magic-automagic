@@ -3,6 +3,7 @@ import { ALGORITHM_VERSION } from "./processing";
 import { rasterToBlob, runWorker } from "./image-io";
 import { rasterDigest, sha256 } from "./provenance";
 import type { ToolOptions } from "./tools";
+import type { Region } from "./region";
 
 const clone = (r: Raster): Raster => ({
   width: r.width,
@@ -44,6 +45,11 @@ export async function workerAutoTune(raster: Raster, signal: AbortSignal) {
 export async function workerTool(raster: Raster, options: ToolOptions, signal: AbortSignal) {
   const res = await runWorker({ kind: "tool", source: clone(raster), options }, signal);
   if (!("kind" in res) || res.kind !== "tool") throw new Error("Unexpected worker response.");
+  return res.result;
+}
+export async function workerRegion(raster: Raster, region: Region, signal: AbortSignal) {
+  const res = await runWorker({ kind: "region", source: clone(raster), region }, signal);
+  if (!("kind" in res) || res.kind !== "region") throw new Error("Unexpected worker response.");
   return res.result;
 }
 

@@ -15,10 +15,11 @@ import {
 import { applyTool, TOOL_NAMES, type ToolName } from "../src/lib/engine/tools";
 import { rasterDigest, sha256 } from "../src/lib/engine/provenance";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
+import { measureRegion } from "../src/lib/engine/region";
 
 const HELP = `ENHANCE! CLI — local pixel operations; AI is opt-in
 Usage: npm run cli -- COMMAND INPUT [INPUT...] [options]
-Commands: inspect, tune, enhance, probe, pipeline, tool, batch, suggest
+Commands: inspect, region, tune, enhance, probe, pipeline, tool, batch, suggest
 Options:
   --output PATH        PNG path (or output directory for batch)
   --threshold N        Enhancement threshold, 0–6.3
@@ -28,9 +29,11 @@ Options:
   --tool NAME          ${TOOL_NAMES.join(" | ")}
   --amount N           Integer for brightness (-255..255), contrast (0..100), threshold (0..255)
   --ai-provider NAME   gemini | lovable (suggest only; default gemini)
+  --region X,Y,W,H     Native pixel rectangle for the region command
   --help               Show this help
 Examples:
   npm run cli -- inspect photo.jpg
+  npm run cli -- region photo.jpg --region 120,80,64,64
   npm run cli -- pipeline photo.jpg --output result.png
   npm run cli -- batch a.jpg b.png --output ./results
   npm run cli -- tool photo.jpg --tool median --output denoised.png
@@ -51,6 +54,7 @@ function parse(argv: string[]) {
     "tool",
     "amount",
     "ai-provider",
+    "region",
   ]);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]!;
@@ -156,6 +160,14 @@ async function run(command: string, path: string, options: Options) {
     record.tune = autoTune(raster);
     return record;
   }
+  if (command === "region") {
+    const fields = (options.region ?? "").split(",");
+    if (fields.length !== 4 || fields.some((v) => !/^\d+$/.test(v)))
+      throw new Error("Use --region X,Y,W,H with positive integer dimensions.");
+    const [x, y, width, height] = fields.map(Number);
+    record.measurements = measureRegion(raster, { x: x!, y: y!, width: width!, height: height! });
+    return record;
+  }
   if (command === "suggest") {
     const provider = select(options["ai-provider"], ["gemini", "lovable"] as const, "gemini");
     const preview = await sharp(bytes)
@@ -230,9 +242,17 @@ async function main() {
     return;
   }
   if (
-    !["inspect", "tune", "enhance", "probe", "pipeline", "tool", "batch", "suggest"].includes(
-      command,
-    )
+    ![
+      "inspect",
+      "region",
+      "tune",
+      "enhance",
+      "probe",
+      "pipeline",
+      "tool",
+      "batch",
+      "suggest",
+    ].includes(command)
   )
     throw new Error(`Unknown command: ${command}.`);
   if (!inputs.length || (command !== "batch" && inputs.length !== 1))
