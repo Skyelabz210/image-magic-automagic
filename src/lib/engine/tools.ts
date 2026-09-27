@@ -45,31 +45,42 @@ export function applyTool(source: Raster, options: ToolOptions): Raster {
       if (name === "grayscale") value = gray(p);
       if (name === "channel") value = data[i + channel];
       if (name === "threshold") value = gray(p) >= amount ? 255 : 0;
-      if (name === "edges" || name === "median") {
+      if (name === "edges") {
         const c = gray(p);
         const neighbors = [-1, 0, 1].flatMap((dy) =>
           [-1, 0, 1].map((dx) => sample(x + dx, y + dy, c)),
         );
-        if (name === "median") value = neighbors.sort((a, b) => a - b)[4];
-        else {
-          const gx =
-            -neighbors[0]! +
-            neighbors[2]! -
-            2 * neighbors[3]! +
-            2 * neighbors[5]! -
-            neighbors[6]! +
-            neighbors[8]!;
-          const gy =
-            -neighbors[0]! -
-            2 * neighbors[1]! -
-            neighbors[2]! +
-            neighbors[6]! +
-            2 * neighbors[7]! +
-            neighbors[8]!;
-          value = Math.min(255, Math.round(Math.hypot(gx, gy)));
-        }
+        const gx =
+          -neighbors[0]! +
+          neighbors[2]! -
+          2 * neighbors[3]! +
+          2 * neighbors[5]! -
+          neighbors[6]! +
+          neighbors[8]!;
+        const gy =
+          -neighbors[0]! -
+          2 * neighbors[1]! -
+          neighbors[2]! +
+          neighbors[6]! +
+          2 * neighbors[7]! +
+          neighbors[8]!;
+        value = Math.min(255, Math.round(Math.hypot(gx, gy)));
       }
       for (let c = 0; c < 3; c++) {
+        if (name === "median") {
+          const neighbors = new Uint8Array(9);
+          let k = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = Math.max(0, Math.min(width - 1, x + dx));
+              const ny = Math.max(0, Math.min(height - 1, y + dy));
+              const n = (ny * width + nx) * 4;
+              neighbors[k++] = data[n + 3] === 0 ? data[i + c]! : data[n + c]!;
+            }
+          neighbors.sort();
+          output[i + c] = neighbors[4]!;
+          continue;
+        }
         output[i + c] =
           value ??
           (name === "invert"

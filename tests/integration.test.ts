@@ -12,12 +12,15 @@ test("pixel tools preserve alpha, dimensions and input; median removes a hot pix
   const data = new Uint8ClampedArray(3 * 3 * 4);
   for (let p = 0; p < 9; p++) {
     data[p * 4] = p === 4 ? 255 : 0;
+    data[p * 4 + 1] = 90;
+    data[p * 4 + 2] = 170;
     data[p * 4 + 3] = 255;
   }
   data[3] = 0;
   const src = { width: 3, height: 3, data };
   const out = applyTool(src, { name: "median" });
   assert.equal(out.data[4 * 4], 0);
+  assert.deepEqual(Array.from(out.data.slice(4 * 4, 4 * 4 + 3)), [0, 90, 170]);
   assert.equal(out.data[3], 0);
   assert.equal(src.data[4 * 4], 255);
   assert.deepEqual([out.width, out.height], [3, 3]);
