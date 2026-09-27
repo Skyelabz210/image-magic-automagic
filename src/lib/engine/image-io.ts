@@ -1,10 +1,7 @@
 import { validateDimensions, type Raster } from "./processing";
 import type { Request, Response } from "./processing.worker";
 
-export function decodeImage(
-  url: string,
-  signal?: AbortSignal,
-): Promise<HTMLImageElement> {
+export function decodeImage(url: string, signal?: AbortSignal): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     const cleanup = () => {
@@ -28,20 +25,13 @@ export function decodeImage(
     };
     image.onerror = () => {
       cleanup();
-      reject(
-        new Error(
-          "This image could not be decoded. Try a valid PNG, JPEG, WebP, or BMP.",
-        ),
-      );
+      reject(new Error("This image could not be decoded. Try a valid PNG, JPEG, WebP, or BMP."));
     };
     image.src = url;
   });
 }
 
-export async function readRaster(
-  url: string,
-  signal?: AbortSignal,
-): Promise<Raster> {
+export async function readRaster(url: string, signal?: AbortSignal): Promise<Raster> {
   const image = await decodeImage(url, signal);
   signal?.throwIfAborted();
   const width = image.naturalWidth,
@@ -62,16 +52,12 @@ export async function readRaster(
   return { width, height, data: pixels.data };
 }
 
-export function runWorker(
-  request: Request,
-  signal: AbortSignal,
-): Promise<Response> {
+export function runWorker(request: Request, signal: AbortSignal): Promise<Response> {
   return new Promise((resolve, reject) => {
     signal.throwIfAborted();
-    const worker = new Worker(
-      new URL("./processing.worker.ts", import.meta.url),
-      { type: "module" },
-    );
+    const worker = new Worker(new URL("./processing.worker.ts", import.meta.url), {
+      type: "module",
+    });
     const cleanup = () => {
       worker.terminate();
       signal.removeEventListener("abort", abort);
@@ -99,7 +85,10 @@ export function runWorker(
       reject(new Error("The processing result could not be read."));
     };
     try {
-      worker.postMessage(request, [request.source.data.buffer]);
+      worker.postMessage(request, [
+        request.source.data.buffer,
+        ...(request.kind === "region" && request.mask ? [request.mask.data.buffer] : []),
+      ]);
     } catch (error) {
       cleanup();
       reject(error);
@@ -118,11 +107,7 @@ export function rasterToBlob(raster: Raster): Promise<Blob> {
       return;
     }
     ctx.putImageData(
-      new ImageData(
-        new Uint8ClampedArray(raster.data),
-        raster.width,
-        raster.height,
-      ),
+      new ImageData(new Uint8ClampedArray(raster.data), raster.width, raster.height),
       0,
       0,
     );

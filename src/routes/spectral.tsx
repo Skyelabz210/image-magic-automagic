@@ -5,9 +5,16 @@ export const Route = createFileRoute("/spectral")({
   head: () => ({
     meta: [
       { title: "Spectral Lab — ENHANCE!" },
-      { name: "description", content: "Full-size Archimedes palimpsest and recovery reference images: KELD, principal components, band ratios." },
+      {
+        name: "description",
+        content:
+          "Full-size Archimedes palimpsest and recovery reference images: KELD, principal components, band ratios.",
+      },
       { property: "og:title", content: "Spectral Lab — ENHANCE!" },
-      { property: "og:description", content: "Full-size Archimedes palimpsest and recovery reference images." },
+      {
+        property: "og:description",
+        content: "Full-size Archimedes palimpsest and recovery reference images.",
+      },
     ],
   }),
   component: SpectralPage,
@@ -31,9 +38,20 @@ function SpectralPage() {
       </PageTitle>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {REFS.map((r, i) => (
-          <a key={r.file} href={`/reference/${r.file}`} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-lg border bg-panel transition-colors hover:border-accent">
+          <a
+            key={r.file}
+            href={`/reference/${r.file}`}
+            target="_blank"
+            rel="noreferrer"
+            className="group overflow-hidden rounded-lg border bg-panel transition-colors hover:border-accent"
+          >
             <div className="checker aspect-[4/3] overflow-hidden">
-              <img src={`/reference/${r.file}`} alt={r.label} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+              <img
+                src={`/reference/${r.file}`}
+                alt={r.label}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
             </div>
             <div className="flex items-center gap-2 px-3 py-2 font-mono text-xs">
               <span className="text-primary">{String(i + 1).padStart(2, "0")}</span>

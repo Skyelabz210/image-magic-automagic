@@ -9,12 +9,18 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "cli": "tsx cli/index.ts",
+    "test": "node --import tsx --test tests/*.test.ts",
     "format": "prettier --write ."
   },
   "overrides": {
     "rolldown": "1.2.1"
   },
   "dependencies": {
+    "@contentauth/c2pa-types": "^0.7.5",
+    "@contentauth/c2pa-utilities": "^0.3.1",
+    "@contentauth/c2pa-wasm": "^0.13.1",
+    "@contentauth/c2pa-web": "^0.15.2",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -60,6 +66,7 @@
     "react-hook-form": "^7.71.2",
     "react-resizable-panels": "^4.6.5",
     "recharts": "^2.15.4",
+    "sharp": "^0.35.4",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
@@ -83,6 +90,7 @@
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
+    "tsx": "^4.23.15",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "8.1.5"

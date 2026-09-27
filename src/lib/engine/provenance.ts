@@ -19,16 +19,12 @@ export async function sha256(bytes: Uint8Array | ArrayBuffer): Promise<string> {
     throw new Error(
       "Secure hashing requires HTTPS or localhost. Open the app in a secure context.",
     );
-  const buffer =
-    bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer;
+  const buffer = bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer;
   const digest = await crypto.subtle.digest("SHA-256", buffer);
-  return Array.from(new Uint8Array(digest), (n) =>
-    n.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(new Uint8Array(digest), (n) => n.toString(16).padStart(2, "0")).join("");
 }
 
-export const hashText = (text: string) =>
-  sha256(new TextEncoder().encode(text));
+export const hashText = (text: string) => sha256(new TextEncoder().encode(text));
 
 export async function rasterDigest(raster: Raster) {
   return hashText(
@@ -37,11 +33,7 @@ export async function rasterDigest(raster: Raster) {
       width: raster.width,
       height: raster.height,
       pixels: await sha256(
-        new Uint8Array(
-          raster.data.buffer,
-          raster.data.byteOffset,
-          raster.data.byteLength,
-        ),
+        new Uint8Array(raster.data.buffer, raster.data.byteOffset, raster.data.byteLength),
       ),
     }),
   );
@@ -53,20 +45,14 @@ function canonical(entry: Omit<LedgerEntry, "chain">) {
     sequence: entry.sequence,
     operation: entry.operation,
     parameters: Object.fromEntries(
-      Object.entries(entry.parameters).sort(([a], [b]) =>
-        a < b ? -1 : a > b ? 1 : 0,
-      ),
+      Object.entries(entry.parameters).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
     ),
     timestamp: entry.timestamp,
     previous: entry.previous,
   });
 }
 
-export async function addEntry(
-  entries: LedgerEntry[],
-  operation: string,
-  parameters: Parameters,
-) {
+export async function addEntry(entries: LedgerEntry[], operation: string, parameters: Parameters) {
   const entry = {
     id: crypto.randomUUID(),
     sequence: entries.length + 1,
@@ -79,8 +65,7 @@ export async function addEntry(
 }
 
 export async function verifyLedger(value: unknown): Promise<LedgerEntry[]> {
-  if (!Array.isArray(value))
-    throw new Error("Stored receipt data must be an array.");
+  if (!Array.isArray(value)) throw new Error("Stored receipt data must be an array.");
   let previous = GENESIS;
   const ids = new Set<string>();
   for (let i = 0; i < value.length; i++) {
@@ -127,9 +112,7 @@ export function readSetting(
     const raw = storage.getItem(key);
     if (raw === null || raw.trim() === "") return fallback;
     const value = Number(raw);
-    return Number.isFinite(value) && value >= min && value <= max
-      ? value
-      : fallback;
+    return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
   } catch {
     return fallback;
   }

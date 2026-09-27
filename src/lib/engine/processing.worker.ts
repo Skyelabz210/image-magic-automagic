@@ -9,16 +9,22 @@ import {
   type ProbeType,
   type Raster,
 } from "./processing";
+import { applyTool, type ToolOptions } from "./tools";
+import { measureRegion, type Region, type RegionMeasurements } from "./region";
 
 export type Request = { source: Raster } & (
   | { kind: "enhance"; threshold: number; strength: number }
   | { kind: "probe"; probe: ProbeType; channel: Channel }
   | { kind: "autotune" }
+  | { kind: "tool"; options: ToolOptions }
+  | { kind: "region"; region: Region; mask?: Raster }
 );
 export type Response =
   | { kind: "enhance"; result: Enhancement }
   | { kind: "probe"; result: Probe }
   | { kind: "autotune"; result: AutoTune }
+  | { kind: "tool"; result: Raster }
+  | { kind: "region"; result: RegionMeasurements }
   | { error: string };
 
 const scope = self as unknown as {
@@ -36,6 +42,14 @@ scope.onmessage = ({ data }) => {
       ] as ArrayBuffer[]);
     } else if (data.kind === "autotune") {
       scope.postMessage({ kind: "autotune", result: autoTune(data.source) });
+    } else if (data.kind === "tool") {
+      const result = applyTool(data.source, data.options);
+      scope.postMessage({ kind: "tool", result }, [result.data.buffer] as ArrayBuffer[]);
+    } else if (data.kind === "region") {
+      scope.postMessage({
+        kind: "region",
+        result: measureRegion(data.source, data.region, data.mask),
+      });
     } else {
       const result = probe(data.source, data.probe, data.channel);
       scope.postMessage({ kind: "probe", result }, [result.map.data.buffer] as ArrayBuffer[]);
