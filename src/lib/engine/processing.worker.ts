@@ -17,7 +17,7 @@ export type Request = { source: Raster } & (
   | { kind: "probe"; probe: ProbeType; channel: Channel }
   | { kind: "autotune" }
   | { kind: "tool"; options: ToolOptions }
-  | { kind: "region"; region: Region }
+  | { kind: "region"; region: Region; mask?: Raster }
 );
 export type Response =
   | { kind: "enhance"; result: Enhancement }
@@ -46,7 +46,10 @@ scope.onmessage = ({ data }) => {
       const result = applyTool(data.source, data.options);
       scope.postMessage({ kind: "tool", result }, [result.data.buffer] as ArrayBuffer[]);
     } else if (data.kind === "region") {
-      scope.postMessage({ kind: "region", result: measureRegion(data.source, data.region) });
+      scope.postMessage({
+        kind: "region",
+        result: measureRegion(data.source, data.region, data.mask),
+      });
     } else {
       const result = probe(data.source, data.probe, data.channel);
       scope.postMessage({ kind: "probe", result }, [result.map.data.buffer] as ArrayBuffer[]);

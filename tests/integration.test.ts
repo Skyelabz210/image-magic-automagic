@@ -44,6 +44,36 @@ test("regional counts use native coordinates and exclude partially transparent s
   assert.throws(() => measureRegion(raster, { x: 1, y: 1, width: 2, height: 2 }), /within/);
 });
 
+test("segmentation mask selects exact pixels and rejects mismatched geometry", () => {
+  const source = {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray([
+      10, 10, 10, 255, 20, 20, 20, 255, 30, 30, 30, 255, 40, 40, 40, 255,
+    ]),
+  };
+  const mask = {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray([
+      255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 0, 255, 255, 255, 255,
+    ]),
+  };
+  const measured = measureRegion(source, { x: 0, y: 0, width: 2, height: 2 }, mask);
+  assert.equal(measured.opaquePixels, 2);
+  assert.equal(measured.channels[0].mean, 25);
+  assert.equal(measured.channels[0].adjacentStepGcd, 0);
+  assert.throws(
+    () =>
+      measureRegion(
+        source,
+        { x: 0, y: 0, width: 2, height: 2 },
+        { width: 1, height: 4, data: mask.data },
+      ),
+    /Mask dimensions/,
+  );
+});
+
 test("Gemini sends inline preview and extracts only completed model text", async () => {
   let body: Record<string, unknown> = {};
   const result = await requestSuggestion(

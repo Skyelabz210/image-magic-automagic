@@ -7,13 +7,13 @@ A browser image workspace based on [Digisl-Image-Processing-App](https://github.
 | Area           | Available tools                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Enhance        | Native resolution 9×9 Shannon entropy, thresholded luminance enhancement, mask and entropy map, auto tuning, full run |
-| Evidence Lab   | KELD STAR8 band map, 7/11/13 lane comb unit steps, 16×16 pixel-step GCD map, interactive region inspection            |
+| Evidence Lab   | KELD STAR8 band map, 7/11/13 lane comb unit steps, 16×16 pixel-step GCD map, JPEG DQT inspection, named region comparison, external segmentation masks and opt-in AI region questions |
 | Image Tools    | Invert, grayscale, signed brightness, contrast, channel isolation, threshold, Sobel edge map, 3×3 median filter       |
 | Batch          | Multiple images, automatic enhancement, probe counts, per image report                                                |
 | Spectral Lab   | Seven spectral reference illustrations with method notes                                                              |
-| Provenance     | Local SHA-256 chained receipt ledger, original and exported PNG hashes                                                |
+| Provenance     | Local SHA-256 chained receipt ledger, original and exported PNG hashes, on-demand browser C2PA Content Credentials validation |
 | AI suggestions | Choose Lovable AI or Google Gemini; small preview sent only after requesting a suggestion                             |
-| CLI            | Inspect, native-pixel region, tune, enhance, probe, pipeline, tool, batch and opt-in suggest                          |
+| CLI            | Inspect, JPEG structure, native-pixel rectangle/mask, stress run, tune, enhance, probe, pipeline, tool, batch and opt-in suggest |
 
 The browser worker and CLI import the same RGBA8 pixel algorithms. Pixel transformations can change visual evidence; keep the source and receipt if the result will be reviewed. The visual probes report signals, not proof that an image was altered.
 
@@ -37,6 +37,9 @@ npm run cli -- --help
 npm run cli -- inspect photo.jpg
 npm run cli -- tune photo.jpg
 npm run cli -- region photo.jpg --region 120,80,64,64
+npm run cli -- mask-region photo.jpg --mask segment.png
+npm run cli -- jpeg-structure photo.jpg
+npm run cli -- stress photo.jpg --output stress.json
 npm run cli -- enhance photo.jpg --threshold 3.5 --strength 1.8 --output enhanced.png
 npm run cli -- probe photo.jpg --probe quantization --channel green --output blocks.png
 npm run cli -- pipeline photo.jpg --output enhanced.png
@@ -46,6 +49,12 @@ npm run cli -- batch a.jpg b.png --output ./results
 ```
 
 Commands write a JSON report to stdout; image commands write PNGs. Batch keeps going on individual errors and exits with code 1 if any image failed. Input is limited to 50 MB, 16 million pixels and 8,192 pixels per side. `sharp` reads common formats including JPEG, PNG, WebP and BMP. The CLI applies EXIF orientation and converts to sRGB before processing; browser and CLI decoding may still differ slightly by platform. PNG hashes describe the exported file and can differ between encoders; raster hashes describe decoded RGBA8 pixels.
+
+The `jpeg-structure` command reads original bytes and lists markers, DQT values in encoded zigzag order, frame sampling and scans. It does not extract DCT coefficients or infer double compression. `stress` runs fixed JPEG quality 85/60, double JPEG, half-size and Gaussian blur variants on images up to 2 million pixels; the report gives probe counts and differences for **one input image**. The numbers are descriptive and have no ground-truth label, confidence or accuracy meaning.
+
+`mask-region` and the Evidence Lab mask uploader accept an exact-dimension mask exported by a segmenter (for example SAM). White/opaque pixels at or above 128 select source pixels; black or transparent pixels are excluded. Partially transparent source samples are excluded from measurements. The CLI report binds source and mask hashes. The app does not run SAM or PixRestore models; their weights, GPU requirements, licenses and test datasets need a separate deployment and benchmark before claiming on-device support.
+
+The Provenance page validates Content Credentials in the browser from the imported **original file** using the C2PA WASM SDK, loaded only when requested. Validation can report absent, invalid, valid, trusted or unresolved. The SDK uses its configured trust context; a valid manifest is a verified signed claim, not a guarantee that the depicted scene is true. The 8.7 MB WASM asset must be hosted with the site. A failed SDK load is shown as unavailable, not as an absent credential. C2PA verification is not currently a CLI command because the Node SDK requires a platform binary from GitHub Releases, which was unavailable in this build environment.
 
 ## AI providers
 
@@ -59,15 +68,15 @@ npm run cli -- suggest photo.jpg --ai-provider lovable
 
 Only `suggest` calls a remote provider. The browser sends a downscaled preview and measurements, while the CLI sends a downscaled JPEG. No key is sent to the browser or written to receipts or reports. Gemini uses the Interactions API with `store: false`; review the provider's own data handling policies before submitting private images.
 
-## Next enhancements
+## Research and validation backlog
 
 The research-backed issue collection orders independent work by value and validation effort:
 
-1. [C2PA credential verification](https://github.com/Skyelabz210/image-magic-automagic/issues/2): validate the original file, show signer trust and ingredient lineage beside local receipts. The C2PA 2.4 spec and browser/Node SDKs provide an implementation path.
-2. [Reliability Lab](https://github.com/Skyelabz210/image-magic-automagic/issues/3): measure probe behavior under JPEG recompression, resampling and multi-step edits before adding confidence language. HSIM/RITA and ForensicHub provide benchmark candidates.
+1. [C2PA credential verification](https://github.com/Skyelabz210/image-magic-automagic/issues/2): obtain signed fixtures, verify tampered assets and signer trust with a real trust-anchor set; add a Node CLI verifier when its binary is available.
+2. [Reliability Lab](https://github.com/Skyelabz210/image-magic-automagic/issues/3): extend the one-image stress run to labeled public datasets, detector calibration and multi-step provenance chains. HSIM/RITA and ForensicHub provide benchmark candidates.
 3. [Optional learned restoration](https://github.com/Skyelabz210/image-magic-automagic/issues/4): compare PixRestore and current enhancement using paired images, latency and artifact inspection; gate optional WebGPU support on a measured runtime budget.
-4. [Interactive analyst workflow](https://github.com/Skyelabz210/image-magic-automagic/issues/5): multi-region comparison, grounded questions through the configured AI provider, and an optional licensed SAM 3 mask adapter.
-5. [JPEG original-byte inspector](https://github.com/Skyelabz210/image-magic-automagic/issues/6): read DQT tables and assess DCT-based compression evidence separately from the decoded-pixel GCD proxy.
+4. [Interactive analyst workflow](https://github.com/Skyelabz210/image-magic-automagic/issues/5): evaluate SAM 3 host and license terms, then optionally connect a hosted segmenter to the existing external mask measurement interface.
+5. [JPEG original-byte inspector](https://github.com/Skyelabz210/image-magic-automagic/issues/6): validate DQT/marker parser against malformed and progressive corpora; add a vetted DCT coefficient decoder and labeled forensic test before any double-compression claim.
 
 The region inspector in Evidence Lab and the `cli region` command are the first step in this workflow. Additional needs include reversible edit history, complete pipeline export manifests and batch memory cleanup.
 

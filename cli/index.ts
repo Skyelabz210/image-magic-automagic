@@ -16,12 +16,14 @@ import { applyTool, TOOL_NAMES, type ToolName } from "../src/lib/engine/tools";
 import { rasterDigest, sha256 } from "../src/lib/engine/provenance";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
 import { measureRegion } from "../src/lib/engine/region";
+import { inspectJpeg } from "../src/lib/engine/jpeg";
+import { stressReport } from "./reliability";
 
 const HELP = `ENHANCE! CLI — local pixel operations; AI is opt-in
 Usage: npm run cli -- COMMAND INPUT [INPUT...] [options]
-Commands: inspect, region, tune, enhance, probe, pipeline, tool, batch, suggest
+Commands: inspect, jpeg-structure, stress, region, mask-region, tune, enhance, probe, pipeline, tool, batch, suggest
 Options:
-  --output PATH        PNG path (or output directory for batch)
+  --output PATH        PNG path; report JSON path for stress; directory for batch
   --threshold N        Enhancement threshold, 0–6.3
   --strength N         Enhancement strength, 1–3
   --probe NAME         keld | lane | quantization
@@ -31,10 +33,14 @@ Options:
   --amount N           Integer for brightness (-255..255), contrast (0..100), threshold (0..255)
   --ai-provider NAME   gemini | lovable (suggest only; default gemini)
   --region X,Y,W,H     Native pixel rectangle for the region command
+  --mask PATH          Exact-size white-on-black or transparent segmentation mask (mask-region)
   --help               Show this help
 Examples:
   npm run cli -- inspect photo.jpg
   npm run cli -- region photo.jpg --region 120,80,64,64
+  npm run cli -- mask-region photo.jpg --mask segment.png
+  npm run cli -- jpeg-structure photo.jpg
+  npm run cli -- stress photo.jpg --output stress.json
   npm run cli -- pipeline photo.jpg --output result.png
   npm run cli -- batch a.jpg b.png --output ./results
   npm run cli -- tool photo.jpg --tool median --output denoised.png
@@ -56,6 +62,7 @@ function parse(argv: string[]) {
     "amount",
     "ai-provider",
     "region",
+    "mask",
   ]);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]!;
@@ -125,6 +132,20 @@ async function png(raster: Raster, path: string) {
   return await sha256(bytes);
 }
 async function run(command: string, path: string, options: Options) {
+  if (command === "jpeg-structure") {
+    const original = await readFile(path);
+    if (!original.length || original.length > MAX_FILE_BYTES)
+      throw new Error("Input must be nonempty and at most 50 MB.");
+    const structure = inspectJpeg(original);
+    return {
+      command,
+      input: path,
+      fileSha256: await sha256(original),
+      width: structure.width,
+      height: structure.height,
+      structure,
+    };
+  }
   const { raster, bytes, fileSha256 } = await load(path);
   const record: Record<string, unknown> = {
     command,
@@ -157,6 +178,16 @@ async function run(command: string, path: string, options: Options) {
     });
     return record;
   }
+  if (command === "stress") {
+    record.reliability = await stressReport(raster);
+    if (options.output) {
+      if (resolve(options.output) === resolve(path))
+        throw new Error("Output must differ from the input image.");
+      await writeFile(options.output, `${JSON.stringify(record, null, 2)}\n`);
+      record.output = options.output;
+    }
+    return record;
+  }
   if (command === "tune") {
     record.tune = autoTune(raster);
     return record;
@@ -167,6 +198,22 @@ async function run(command: string, path: string, options: Options) {
       throw new Error("Use --region X,Y,W,H with positive integer dimensions.");
     const [x, y, width, height] = fields.map(Number);
     record.measurements = measureRegion(raster, { x: x!, y: y!, width: width!, height: height! });
+    return record;
+  }
+  if (command === "mask-region") {
+    if (!options.mask) throw new Error("--mask PATH is required for mask-region.");
+    const mask = await load(options.mask);
+    record.mask = { path: options.mask, fileSha256: mask.fileSha256, threshold: 128 };
+    record.measurements = measureRegion(
+      raster,
+      {
+        x: 0,
+        y: 0,
+        width: raster.width,
+        height: raster.height,
+      },
+      mask.raster,
+    );
     return record;
   }
   if (command === "suggest") {
@@ -245,7 +292,10 @@ async function main() {
   if (
     ![
       "inspect",
+      "jpeg-structure",
+      "stress",
       "region",
+      "mask-region",
       "tune",
       "enhance",
       "probe",

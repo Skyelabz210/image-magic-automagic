@@ -47,8 +47,16 @@ export async function workerTool(raster: Raster, options: ToolOptions, signal: A
   if (!("kind" in res) || res.kind !== "tool") throw new Error("Unexpected worker response.");
   return res.result;
 }
-export async function workerRegion(raster: Raster, region: Region, signal: AbortSignal) {
-  const res = await runWorker({ kind: "region", source: clone(raster), region }, signal);
+export async function workerRegion(
+  raster: Raster,
+  region: Region,
+  signal: AbortSignal,
+  mask?: Raster,
+) {
+  const res = await runWorker(
+    { kind: "region", source: clone(raster), region, ...(mask ? { mask: clone(mask) } : {}) },
+    signal,
+  );
   if (!("kind" in res) || res.kind !== "region") throw new Error("Unexpected worker response.");
   return res.result;
 }
