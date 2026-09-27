@@ -54,6 +54,8 @@ The `jpeg-structure` command reads original bytes and lists markers, DQT values 
 
 `mask-region` and the Evidence Lab mask uploader accept an exact-dimension mask exported by a segmenter (for example SAM). White/opaque pixels at or above 128 select source pixels; black or transparent pixels are excluded. Partially transparent source samples are excluded from measurements. The CLI report binds source and mask hashes. The app does not run SAM or PixRestore models; their weights, GPU requirements, licenses and test datasets need a separate deployment and benchmark before claiming on-device support.
 
+Named selections stay in the current workspace while switching pages and reset when a new source is imported. Evidence Lab exports region measurements with both original-file and decoded-raster hashes. Submitting a region question sends a reduced preview and measurements to the chosen provider; the receipt records the question, answer summary, provider, prompt version and source raster hash.
+
 The Provenance page validates Content Credentials in the browser from the imported **original file** using the C2PA WASM SDK, loaded only when requested. Validation can report absent, invalid, valid, trusted or unresolved. The SDK uses its configured trust context; a valid manifest is a verified signed claim, not a guarantee that the depicted scene is true. The 8.7 MB WASM asset must be hosted with the site. A failed SDK load is shown as unavailable, not as an absent credential. C2PA verification is not currently a CLI command because the Node SDK requires a platform binary from GitHub Releases, which was unavailable in this build environment.
 
 ## AI providers

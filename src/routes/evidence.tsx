@@ -10,10 +10,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { suggestSettings, type AiSuggestion } from "@/lib/ai.functions";
 import { toast } from "sonner";
 import { workerRegion } from "@/lib/engine/pipeline";
-import { readRaster } from "@/lib/engine/image-io";
+import { downloadBlob, readRaster } from "@/lib/engine/image-io";
 import { validateFile } from "@/lib/engine/processing";
 import { sha256 } from "@/lib/engine/provenance";
-import type { Region, RegionMeasurements } from "@/lib/engine/region";
+import type { Region } from "@/lib/engine/region";
 import { inspectJpeg, type JpegStructure } from "@/lib/engine/jpeg";
 
 export const Route = createFileRoute("/evidence")({
@@ -254,11 +254,9 @@ function RegionInspector({
   source: NonNullable<ReturnType<typeof useWorkspace>["source"]>;
   record: ReturnType<typeof useWorkspace>["record"];
 }) {
+  const { savedRegions: saved, setSavedRegions: setSaved } = useWorkspace();
   const [region, setRegion] = useState<Region | null>(null);
-  const [saved, setSaved] = useState<
-    { id: string; name: string; metrics: RegionMeasurements; masked?: boolean }[]
-  >([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(saved.at(-1)?.id ?? null);
   const metrics = saved.find((item) => item.id === selectedId)?.metrics ?? null;
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState<"lovable" | "gemini">("lovable");
@@ -349,8 +347,11 @@ function RegionInspector({
       setAnswer(response);
       await record("ai-region-question", {
         provider,
+        promptVersion: "region-v1",
+        question,
         regions: Math.min(saved.length, 12),
         sourceSha256: source.rasterHash,
+        advisoryAnswer: response.summary,
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "AI question failed.");
@@ -400,7 +401,36 @@ function RegionInspector({
   };
   return (
     <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_300px]">
-      <Panel title="Region inspector" kicker="native pixels">
+      <Panel
+        title="Region inspector"
+        kicker="native pixels"
+        actions={
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!saved.length}
+            onClick={() => {
+              const report = {
+                format: "enhance-regions-v1",
+                source: {
+                  name: source.name,
+                  fileSha256: source.fileHash,
+                  rasterSha256: source.rasterHash,
+                  width: source.raster.width,
+                  height: source.raster.height,
+                },
+                regions: saved,
+              };
+              downloadBlob(
+                new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
+                `${source.name.replace(/\.[^.]+$/, "")}-regions.json`,
+              );
+            }}
+          >
+            Export regions
+          </Button>
+        }
+      >
         <p className="mb-3 text-xs text-muted-foreground">
           Drag across the original to measure a region. Coordinates and counts use original pixels;
           no resampling.

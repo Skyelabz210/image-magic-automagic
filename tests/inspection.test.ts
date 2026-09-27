@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import { inspectJpeg } from "../src/lib/engine/jpeg";
-import { summarizeManifest } from "../src/lib/engine/credentials";
+import { inspectCredentials, summarizeManifest } from "../src/lib/engine/credentials";
 
 test("original-byte JPEG DQT parser reads real encodings and safely reports truncation", async () => {
   const jpg = await sharp({ create: { width: 32, height: 24, channels: 3, background: "#c86939" } })
@@ -86,7 +86,7 @@ test("JPEG parser handles 16-bit DQT values and stuffed scan bytes", () => {
   );
 });
 
-test("manifest summary distinguishes absent, invalid, valid, trusted and unknown", () => {
+test("manifest summary distinguishes absent, invalid, valid, trusted and unknown", async () => {
   assert.equal(summarizeManifest(null).state, "absent");
   const report = summarizeManifest({
     active_manifest: "a",
@@ -106,6 +106,10 @@ test("manifest summary distinguishes absent, invalid, valid, trusted and unknown
   assert.equal(summarizeManifest({ validation_state: "Invalid" }).state, "invalid");
   assert.equal(summarizeManifest({ validation_state: "Trusted" }).state, "trusted");
   assert.equal(summarizeManifest({}).state, "unresolved");
+  assert.equal(
+    (await inspectCredentials(new Blob(["BM"], { type: "image/bmp" }))).state,
+    "unsupported",
+  );
 });
 
 test("stress report keeps original dimensions and reports measurable perturbations", async () => {

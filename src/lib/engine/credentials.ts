@@ -1,7 +1,7 @@
 import type { ManifestStore } from "@contentauth/c2pa-types";
 
 export type CredentialReport = {
-  state: "absent" | "invalid" | "valid" | "trusted" | "unresolved";
+  state: "absent" | "invalid" | "valid" | "trusted" | "unresolved" | "unsupported";
   activeLabel: string | null;
   title: string | null;
   signer: string | null;
@@ -26,7 +26,17 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
     };
   const activeLabel = store.active_manifest ?? null;
   const active = activeLabel ? store.manifests?.[activeLabel] : undefined;
-  const statusCodes = (store.validation_status ?? []).map((status) => status.code);
+  const activeCodes = store.validation_results?.activeManifest;
+  const statusCodes = [
+    ...new Set(
+      [
+        ...(store.validation_status ?? []),
+        ...(activeCodes?.failure ?? []),
+        ...(activeCodes?.informational ?? []),
+        ...(activeCodes?.success ?? []),
+      ].map((status) => status.code),
+    ),
+  ];
   const state =
     store.validation_state === "Trusted"
       ? "trusted"
@@ -56,6 +66,12 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
 
 /** Loads the relatively large SDK only after an explicit user request. */
 export async function inspectCredentials(blob: Blob): Promise<CredentialReport> {
+  if (/^image\/(?:bmp|x-ms-bmp)$/i.test(blob.type))
+    return {
+      ...summarizeManifest(null),
+      state: "unsupported",
+      note: "BMP is not supported by this C2PA verifier; no credential conclusion was reached.",
+    };
   const [{ createC2pa, Reader, Context }, { default: wasmSrc }] = await Promise.all([
     import("@contentauth/c2pa-web"),
     import("@contentauth/c2pa-web/resources/c2pa.wasm?url"),
