@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { FileJson, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { inspectCredentials, type CredentialReport } from "@/lib/engine/credentials";
 import { Button } from "@/components/ui/button";
 import { PageTitle, Panel } from "@/components/shell";
@@ -30,12 +30,20 @@ function ReceiptsPage() {
   const [credentials, setCredentials] = useState<CredentialReport | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
+  const inspectionId = useRef(0);
   useEffect(() => {
+    const currentInspection = inspectionId;
+    currentInspection.current++;
     setCredentials(null);
     setCredentialError(null);
+    setReading(false);
+    return () => {
+      currentInspection.current++;
+    };
   }, [source?.fileHash]);
   const inspect = async () => {
     if (!source) return;
+    const id = ++inspectionId.current;
     setReading(true);
     setCredentialError(null);
     try {
@@ -43,11 +51,14 @@ function ReceiptsPage() {
       if (!response.ok) throw new Error("Original file is no longer available.");
       const blob = await response.blob();
       const report = await inspectCredentials(blob);
-      setCredentials(report);
+      if (inspectionId.current === id) setCredentials(report);
     } catch (error) {
-      setCredentialError(error instanceof Error ? error.message : "Credential inspection failed.");
+      if (inspectionId.current === id)
+        setCredentialError(
+          error instanceof Error ? error.message : "Credential inspection failed.",
+        );
     } finally {
-      setReading(false);
+      if (inspectionId.current === id) setReading(false);
     }
   };
   return (
@@ -80,6 +91,9 @@ function ReceiptsPage() {
             {credentials.issuer && <p>Issuer: {credentials.issuer}</p>}
             {credentials.ingredients.length > 0 && (
               <p>Ingredients: {credentials.ingredients.join(", ")}</p>
+            )}
+            {credentials.actions.length > 0 && (
+              <p>Claimed actions: {credentials.actions.join(", ")}</p>
             )}
             {credentials.statusCodes.length > 0 && (
               <p>Status codes: {credentials.statusCodes.join(", ")}</p>

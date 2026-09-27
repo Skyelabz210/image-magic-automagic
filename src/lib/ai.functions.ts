@@ -7,7 +7,9 @@ const Input = z.object({
     .string()
     .regex(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/)
     .max(3_000_000),
-  metrics: z.record(z.string().max(80), z.union([z.string().max(256), z.number().finite()])),
+  metrics: z
+    .record(z.string().max(80), z.union([z.string().max(256), z.number().finite()]))
+    .refine((value) => Object.keys(value).length <= 32, "Too many measurements."),
   provider: z.enum(["lovable", "gemini"]),
   question: z.string().trim().min(1).max(300).optional(),
 });

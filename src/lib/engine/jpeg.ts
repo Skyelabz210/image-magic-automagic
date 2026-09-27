@@ -14,6 +14,15 @@ export type JpegStructure = {
   components: { id: number; horizontal: number; vertical: number; tableId: number }[];
   scans: number;
   restartInterval: number | null;
+  metadata: {
+    jfif: boolean;
+    exif: boolean;
+    exifOrientation: number | null;
+    icc: boolean;
+    xmp: boolean;
+    jumbfApp11: boolean;
+    adobe: boolean;
+  };
   markers: { name: string; offset: number; length: number }[];
   quantizationTables: QuantizationTable[];
   complete: boolean;
@@ -31,7 +40,38 @@ const name = (marker: number) =>
       number,
       string
     >
-  )[marker] ?? (FRAME_MARKERS.has(marker) ? `SOF${hex(marker)}` : `FF${hex(marker)}`);
+  )[marker] ??
+  (FRAME_MARKERS.has(marker)
+    ? `SOF${marker - 0xc0}`
+    : marker >= 0xe0 && marker <= 0xef
+      ? `APP${marker - 0xe0}`
+      : `FF${hex(marker)}`);
+
+function exifOrientation(bytes: Uint8Array, begin: number, end: number): number | null {
+  const tiff = begin + 6; // Exif\0\0
+  if (tiff + 8 > end) return null;
+  const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49;
+  if (!little && !(bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d)) return null;
+  const u16 = (p: number) =>
+    little ? bytes[p]! | (bytes[p + 1]! << 8) : (bytes[p]! << 8) | bytes[p + 1]!;
+  const u32 = (p: number) =>
+    little
+      ? (bytes[p]! | (bytes[p + 1]! << 8) | (bytes[p + 2]! << 16) | (bytes[p + 3]! << 24)) >>> 0
+      : ((bytes[p]! << 24) | (bytes[p + 1]! << 16) | (bytes[p + 2]! << 8) | bytes[p + 3]!) >>> 0;
+  if (u16(tiff + 2) !== 42) return null;
+  const first = tiff + u32(tiff + 4);
+  if (first < tiff + 8 || first + 2 > end) return null;
+  const count = u16(first);
+  if (count > Math.floor((end - first - 2) / 12)) return null;
+  for (let i = 0; i < count; i++) {
+    const p = first + 2 + i * 12;
+    if (u16(p) === 0x0112 && u16(p + 2) === 3 && u32(p + 4) === 1) {
+      const value = u16(p + 8);
+      return value >= 1 && value <= 8 ? value : null;
+    }
+  }
+  return null;
+}
 
 export function inspectJpeg(input: Uint8Array): JpegStructure {
   if (input.length < 4 || input[0] !== 0xff || input[1] !== 0xd8)
@@ -44,6 +84,15 @@ export function inspectJpeg(input: Uint8Array): JpegStructure {
     components: [],
     scans: 0,
     restartInterval: null,
+    metadata: {
+      jfif: false,
+      exif: false,
+      exifOrientation: null,
+      icc: false,
+      xmp: false,
+      jumbfApp11: false,
+      adobe: false,
+    },
     markers: [{ name: "SOI", offset: 0, length: 2 }],
     quantizationTables: [],
     complete: false,
@@ -89,6 +138,18 @@ export function inspectJpeg(input: Uint8Array): JpegStructure {
     const body = at + 2,
       end = at + length;
     result.markers.push({ name: name(marker), offset: start, length: end - start });
+    const prefix = (signature: string) =>
+      body + signature.length <= end &&
+      Array.from(signature).every((char, index) => input[body + index] === char.charCodeAt(0));
+    if (marker === 0xe0 && prefix("JFIF\0")) result.metadata.jfif = true;
+    if (marker === 0xe1 && prefix("Exif\0\0")) {
+      result.metadata.exif = true;
+      result.metadata.exifOrientation = exifOrientation(input, body, end);
+    }
+    if (marker === 0xe1 && prefix("http://ns.adobe.com/xap/1.0/\0")) result.metadata.xmp = true;
+    if (marker === 0xe2 && prefix("ICC_PROFILE\0")) result.metadata.icc = true;
+    if (marker === 0xeb && prefix("JP")) result.metadata.jumbfApp11 = true;
+    if (marker === 0xee && prefix("Adobe\0")) result.metadata.adobe = true;
     if (marker === 0xdb) {
       let p = body;
       while (p < end) {

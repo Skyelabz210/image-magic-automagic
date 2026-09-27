@@ -215,6 +215,21 @@ function JpegPanel({ source }: { source: NonNullable<ReturnType<typeof useWorksp
             </p>
             <p>Restart interval: {report.restartInterval ?? "unspecified"}</p>
             <p>
+              Metadata markers:{" "}
+              {[
+                report.metadata.jfif && "JFIF",
+                report.metadata.exif && "EXIF",
+                report.metadata.icc && "ICC",
+                report.metadata.xmp && "XMP",
+                report.metadata.jumbfApp11 && "APP11 JUMBF (verify C2PA separately)",
+                report.metadata.adobe && "Adobe",
+              ]
+                .filter(Boolean)
+                .join(", ") || "none detected"}
+              {report.metadata.exifOrientation &&
+                ` · EXIF orientation ${report.metadata.exifOrientation}`}
+            </p>
+            <p>
               Tables: {report.quantizationTables.length} · Markers:{" "}
               {report.markers.map((m) => m.name).join(", ")}
             </p>

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -84,6 +84,22 @@ test("JPEG parser handles 16-bit DQT values and stuffed scan bytes", () => {
     [report.quantizationTables[0]?.zigzag[0], report.quantizationTables[0]?.zigzag[63]],
     [300, 363],
   );
+});
+
+test("EXIF orientation and malformed marker fuzzing stay bounded", () => {
+  const body = [
+    69, 120, 105, 102, 0, 0, 73, 73, 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0,
+    0,
+  ];
+  const image = Uint8Array.from([0xff, 0xd8, 0xff, 0xe1, 0, body.length + 2, ...body, 0xff, 0xd9]);
+  assert.equal(inspectJpeg(image).metadata.exifOrientation, 6);
+  let seed = 0x12345;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const changed = Uint8Array.from(image);
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    changed[2 + (seed % (changed.length - 2))] = (seed >>> 16) & 255;
+    assert.doesNotThrow(() => inspectJpeg(changed));
+  }
 });
 
 test("manifest summary distinguishes absent, invalid, valid, trusted and unknown", async () => {
@@ -187,6 +203,42 @@ test("CLI mask-region measures only selected pixels and binds the mask hash", as
     assert.equal(result.measurements.opaquePixels, 1);
     assert.equal(result.measurements.channels[0].mean, 10);
     assert.equal(result.mask.fileSha256.length, 64);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI rejects oversized inputs before decoding and inspect excludes partial alpha", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "enhance-bounds-"));
+  try {
+    const large = join(dir, "sparse.jpg");
+    const handle = await open(large, "w");
+    await handle.truncate(50 * 1024 * 1024 + 1);
+    await handle.close();
+    assert.throws(
+      () =>
+        execFileSync(
+          process.execPath,
+          ["--import", "tsx", "cli/index.ts", "jpeg-structure", large],
+          { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+        ),
+      /at most 50 MB/,
+    );
+    const input = join(dir, "alpha.png");
+    await writeFile(
+      input,
+      await sharp(Buffer.from([250, 0, 0, 128, 20, 0, 0, 255]), {
+        raw: { width: 2, height: 1, channels: 4 },
+      })
+        .png()
+        .toBuffer(),
+    );
+    const result = JSON.parse(
+      execFileSync(process.execPath, ["--import", "tsx", "cli/index.ts", "inspect", input], {
+        encoding: "utf8",
+      }),
+    );
+    assert.equal(result.channels[0].mean, 20);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

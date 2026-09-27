@@ -62,20 +62,38 @@ export async function stressReport(source: Raster) {
     );
     const region = measureRegion(raster, center);
     let totalDifference = 0;
-    for (let i = 0; i < raster.data.length; i += 4)
+    let comparedOpaquePixels = 0;
+    let sourceOpaquePixels = 0;
+    let variantOpaquePixels = 0;
+    let opacityChangedPixels = 0;
+    for (let i = 0; i < raster.data.length; i += 4) {
+      const originalOpaque = source.data[i + 3] === 255;
+      const variantOpaque = raster.data[i + 3] === 255;
+      if (originalOpaque) sourceOpaquePixels++;
+      if (variantOpaque) variantOpaquePixels++;
+      if (originalOpaque !== variantOpaque) opacityChangedPixels++;
+      if (!originalOpaque || !variantOpaque) continue;
+      comparedOpaquePixels++;
       for (let c = 0; c < 3; c++)
         totalDifference += Math.abs(source.data[i + c]! - raster.data[i + c]!);
+    }
     variants.push({
       name,
       counts,
       centerGreenEntropy: region.channels[1].entropy,
       centerGreenStepGcd: region.channels[1].adjacentStepGcd,
-      meanAbsoluteRgbDifference: totalDifference / (raster.width * raster.height * 3),
+      sourceOpaquePixels,
+      variantOpaquePixels,
+      opacityChangedPixels,
+      comparedOpaquePixels,
+      meanAbsoluteRgbDifference: comparedOpaquePixels
+        ? totalDifference / (comparedOpaquePixels * 3)
+        : null,
     });
   }
   return {
     method:
-      "Descriptive stress run on this one image. JPEG uses sharp/libvips, then each image is decoded back to RGBA8. Pixel probes use green channel. No ground-truth labels or manipulation confidence are inferred.",
+      "Descriptive stress run on this one image. JPEG uses sharp/libvips, then each image is decoded back to RGBA8. Pixel probes use green channel and include only fully opaque pixels. RGB differences compare pixels fully opaque in both images; null means no comparable pixels. JPEG removes alpha, so opacity population may change. No ground-truth labels or manipulation confidence are inferred.",
     dimensions: { width: source.width, height: source.height },
     center,
     variants,

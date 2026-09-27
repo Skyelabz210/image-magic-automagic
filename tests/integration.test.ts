@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { applyTool } from "../src/lib/engine/tools";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
 import { measureRegion } from "../src/lib/engine/region";
+import { stressReport } from "../cli/reliability";
 
 test("pixel tools preserve alpha, dimensions and input; median removes a hot pixel", () => {
   const data = new Uint8ClampedArray(3 * 3 * 4);
@@ -74,6 +75,19 @@ test("segmentation mask selects exact pixels and rejects mismatched geometry", (
   );
 });
 
+test("stress differences ignore invisible RGB and expose alpha population shifts", async () => {
+  const transparent = {
+    width: 4,
+    height: 4,
+    data: Uint8ClampedArray.from({ length: 64 }, (_, i) => (i % 4 === 3 ? 0 : 255)),
+  };
+  const report = await stressReport(transparent);
+  assert.equal(report.variants[0]?.sourceOpaquePixels, 0);
+  assert.equal(report.variants[1]?.comparedOpaquePixels, 0);
+  assert.equal(report.variants[1]?.meanAbsoluteRgbDifference, null);
+  assert.equal(report.variants[1]?.opacityChangedPixels, 16);
+});
+
 test("Gemini sends inline preview and extracts only completed model text", async () => {
   let body: Record<string, unknown> = {};
   const result = await requestSuggestion(
@@ -115,6 +129,44 @@ test("Gemini sends inline preview and extracts only completed model text", async
     ),
     /server/,
   );
+});
+
+test("regional AI answer rejects numerical claims absent from supplied measurements", async () => {
+  const metrics = { region1: "Region 1 green mean=42.00, entropy=3.250" };
+  const call = (summary: string) =>
+    requestSuggestion(
+      {
+        provider: "gemini",
+        image: "data:image/jpeg;base64,YWJj",
+        metrics,
+        question: "Compare this region",
+      },
+      {
+        env: { GEMINI_API_KEY: "test" },
+        fetch: async () =>
+          Response.json({
+            status: "completed",
+            steps: [
+              {
+                type: "model_output",
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      threshold: null,
+                      strength: null,
+                      summary,
+                      observations: [],
+                    }),
+                  },
+                ],
+              },
+            ],
+          }),
+      },
+    );
+  assert.match((await call("Region 1 has a green mean of 42 and entropy 3.25.")).summary, /42/);
+  await assert.rejects(call("Region 1 has a green mean of 99."), /absent/);
 });
 
 test("CLI pipeline produces a PNG and measured output hash", async () => {

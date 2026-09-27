@@ -18,10 +18,11 @@ import { requestSuggestion } from "../src/lib/ai-providers.server";
 import { measureRegion } from "../src/lib/engine/region";
 import { inspectJpeg } from "../src/lib/engine/jpeg";
 import { stressReport } from "./reliability";
+import { inspectCredentialsNode } from "./credentials";
 
 const HELP = `ENHANCE! CLI — local pixel operations; AI is opt-in
 Usage: npm run cli -- COMMAND INPUT [INPUT...] [options]
-Commands: inspect, jpeg-structure, stress, region, mask-region, tune, enhance, probe, pipeline, tool, batch, suggest
+Commands: inspect, credentials, jpeg-structure, stress, region, mask-region, tune, enhance, probe, pipeline, tool, batch, suggest
 Options:
   --output PATH        PNG path; report JSON path for stress; directory for batch
   --threshold N        Enhancement threshold, 0–6.3
@@ -34,12 +35,15 @@ Options:
   --ai-provider NAME   gemini | lovable (suggest only; default gemini)
   --region X,Y,W,H     Native pixel rectangle for the region command
   --mask PATH          Exact-size white-on-black or transparent segmentation mask (mask-region)
+  --credentials        Also validate original bytes during inspect
   --help               Show this help
 Examples:
   npm run cli -- inspect photo.jpg
   npm run cli -- region photo.jpg --region 120,80,64,64
   npm run cli -- mask-region photo.jpg --mask segment.png
   npm run cli -- jpeg-structure photo.jpg
+  npm run cli -- credentials photo.jpg
+  npm run cli -- inspect photo.jpg --credentials
   npm run cli -- stress photo.jpg --output stress.json
   npm run cli -- pipeline photo.jpg --output result.png
   npm run cli -- batch a.jpg b.png --output ./results
@@ -63,13 +67,18 @@ function parse(argv: string[]) {
     "ai-provider",
     "region",
     "mask",
+    "credentials",
   ]);
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]!;
     if (arg === "--help") return { command: "help", inputs, options };
     if (arg.startsWith("--")) {
-      const key = arg.slice(2),
-        value = rest[++i];
+      const key = arg.slice(2);
+      if (key === "credentials") {
+        options.credentials = "true";
+        continue;
+      }
+      const value = rest[++i];
       if (!allowed.has(key) || !value || value.startsWith("--"))
         throw new Error(`Invalid option: ${arg}`);
       options[key] = value;
@@ -98,10 +107,17 @@ function channel(options: Options): Channel {
   return CHANNELS.indexOf(select(options.channel, CHANNELS, "green")) as Channel;
 }
 
-async function load(path: string) {
-  const file = await readFile(path);
-  if (!file.length || file.length > MAX_FILE_BYTES)
+async function readBounded(path: string) {
+  const info = await stat(path);
+  if (!info.isFile() || !info.size || info.size > MAX_FILE_BYTES)
     throw new Error("Input must be nonempty and at most 50 MB.");
+  const bytes = await readFile(path);
+  if (!bytes.length || bytes.length > MAX_FILE_BYTES)
+    throw new Error("Input must be nonempty and at most 50 MB.");
+  return bytes;
+}
+async function load(path: string) {
+  const file = await readBounded(path);
   const image = sharp(file, { limitInputPixels: 16_000_000, failOn: "error" })
     .rotate()
     .toColourspace("srgb")
@@ -120,7 +136,7 @@ async function load(path: string) {
     height: info.height,
     data: new Uint8ClampedArray(data),
   };
-  return { raster, bytes: file, fileSha256: await sha256(file) };
+  return { raster, bytes: file, format: metadata.format, fileSha256: await sha256(file) };
 }
 async function png(raster: Raster, path: string) {
   const bytes = await sharp(Buffer.from(raster.data), {
@@ -133,9 +149,7 @@ async function png(raster: Raster, path: string) {
 }
 async function run(command: string, path: string, options: Options) {
   if (command === "jpeg-structure") {
-    const original = await readFile(path);
-    if (!original.length || original.length > MAX_FILE_BYTES)
-      throw new Error("Input must be nonempty and at most 50 MB.");
+    const original = await readBounded(path);
     const structure = inspectJpeg(original);
     return {
       command,
@@ -146,7 +160,7 @@ async function run(command: string, path: string, options: Options) {
       structure,
     };
   }
-  const { raster, bytes, fileSha256 } = await load(path);
+  const { raster, bytes, format, fileSha256 } = await load(path);
   const record: Record<string, unknown> = {
     command,
     input: path,
@@ -155,14 +169,19 @@ async function run(command: string, path: string, options: Options) {
     fileSha256,
     rasterSha256: await rasterDigest(raster),
   };
+  if (command === "credentials") {
+    record.credentials = await inspectCredentialsNode(bytes, format!);
+    return record;
+  }
   if (command === "inspect") {
+    if (options.credentials) record.credentials = await inspectCredentialsNode(bytes, format!);
     record.channels = ["red", "green", "blue"].map((label, c) => {
       let min = 255,
         max = 0,
         total = 0,
         visible = 0;
       for (let i = 0; i < raster.data.length; i += 4)
-        if (raster.data[i + 3]) {
+        if (raster.data[i + 3] === 255) {
           const v = raster.data[i + c]!;
           min = Math.min(min, v);
           max = Math.max(max, v);
@@ -183,8 +202,8 @@ async function run(command: string, path: string, options: Options) {
     if (options.output) {
       if (resolve(options.output) === resolve(path))
         throw new Error("Output must differ from the input image.");
-      await writeFile(options.output, `${JSON.stringify(record, null, 2)}\n`);
       record.output = options.output;
+      await writeFile(options.output, `${JSON.stringify(record, null, 2)}\n`);
     }
     return record;
   }
@@ -292,6 +311,7 @@ async function main() {
   if (
     ![
       "inspect",
+      "credentials",
       "jpeg-structure",
       "stress",
       "region",
@@ -308,6 +328,8 @@ async function main() {
     throw new Error(`Unknown command: ${command}.`);
   if (!inputs.length || (command !== "batch" && inputs.length !== 1))
     throw new Error("Provide one input image (or multiple for batch).");
+  if (options.credentials && command !== "inspect" && command !== "credentials")
+    throw new Error("--credentials is only supported with inspect or credentials.");
   if (command === "batch") {
     const directory = options.output;
     if (!directory) throw new Error("--output DIRECTORY is required for batch.");

@@ -7,6 +7,7 @@ export type CredentialReport = {
   signer: string | null;
   issuer: string | null;
   ingredients: string[];
+  actions: string[];
   statusCodes: string[];
   note: string;
 };
@@ -21,6 +22,7 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
       signer: null,
       issuer: null,
       ingredients: [],
+      actions: [],
       statusCodes: [],
       note: "No embedded C2PA manifest was found in the original file.",
     };
@@ -45,6 +47,23 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
         : store.validation_state === "Invalid"
           ? "invalid"
           : "unresolved";
+  const actions = (active?.assertions ?? [])
+    .filter((assertion) => /^c2pa\.actions(?:\.v\d+)?$/.test(assertion.label))
+    .flatMap((assertion) => {
+      const data = assertion.data;
+      if (!data || typeof data !== "object" || !("actions" in data) || !Array.isArray(data.actions))
+        return [];
+      return data.actions
+        .filter(
+          (item): item is { action: string } =>
+            !!item &&
+            typeof item === "object" &&
+            "action" in item &&
+            typeof item.action === "string",
+        )
+        .map((item) => item.action);
+    })
+    .slice(0, 50);
   return {
     state,
     activeLabel,
@@ -52,6 +71,7 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
     signer: active?.signature_info?.common_name ?? null,
     issuer: active?.signature_info?.issuer ?? null,
     ingredients: (active?.ingredients ?? []).map((item) => item.title ?? "Untitled ingredient"),
+    actions,
     statusCodes,
     note:
       state === "trusted"
@@ -64,6 +84,21 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
   };
 }
 
+type C2paRuntime = Awaited<ReturnType<(typeof import("@contentauth/c2pa-web"))["createC2pa"]>>;
+let runtimePromise: Promise<C2paRuntime> | null = null;
+function runtime() {
+  runtimePromise ??= Promise.all([
+    import("@contentauth/c2pa-web"),
+    import("@contentauth/c2pa-web/resources/c2pa.wasm?url"),
+  ])
+    .then(([sdk, wasm]) => sdk.createC2pa({ wasmSrc: wasm.default }))
+    .catch((error: unknown) => {
+      runtimePromise = null;
+      throw error;
+    });
+  return runtimePromise;
+}
+
 /** Loads the relatively large SDK only after an explicit user request. */
 export async function inspectCredentials(blob: Blob): Promise<CredentialReport> {
   if (/^image\/(?:bmp|x-ms-bmp)$/i.test(blob.type))
@@ -72,11 +107,10 @@ export async function inspectCredentials(blob: Blob): Promise<CredentialReport> 
       state: "unsupported",
       note: "BMP is not supported by this C2PA verifier; no credential conclusion was reached.",
     };
-  const [{ createC2pa, Reader, Context }, { default: wasmSrc }] = await Promise.all([
+  const [{ Reader, Context }, c2pa] = await Promise.all([
     import("@contentauth/c2pa-web"),
-    import("@contentauth/c2pa-web/resources/c2pa.wasm?url"),
+    runtime(),
   ]);
-  const c2pa = await createC2pa({ wasmSrc });
   const reader = await Reader.fromBlob(
     c2pa,
     blob.type || undefined,

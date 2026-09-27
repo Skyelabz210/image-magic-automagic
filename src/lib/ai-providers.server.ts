@@ -32,6 +32,23 @@ function normalize(text: string): AiSuggestion {
   };
 }
 
+/** Advisory prose may restate measurements but may not invent measured numbers. */
+function groundNumbers(result: AiSuggestion, metrics: Record<string, string | number>) {
+  const numeric = (text: string) =>
+    [...text.matchAll(/(?<![\w.])-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  const supplied = new Set(
+    Object.entries(metrics)
+      .filter(([key]) => !/hash|sha256/i.test(key))
+      .flatMap(([key, value]) => numeric(`${key} ${value}`)),
+  );
+  const claimed = numeric([result.summary, ...result.observations].join(" "));
+  if (claimed.some((n) => !supplied.has(n)))
+    throw new Error(
+      "AI cited a number absent from the supplied regional measurements. Please try again.",
+    );
+  return result;
+}
+
 export async function requestSuggestion(
   input: {
     provider: AiProvider;
@@ -80,7 +97,8 @@ export async function requestSuggestion(
       .filter((part: { type: string }) => part.type === "text")
       .map((part: { text?: string }) => part.text ?? "")
       .join("");
-    return normalize(output ?? "");
+    const suggestion = normalize(output ?? "");
+    return input.question ? groundNumbers(suggestion, input.metrics) : suggestion;
   }
 
   const res = await fetcher("https://ai.gateway.lovable.dev/v1/responses", {
@@ -121,7 +139,8 @@ export async function requestSuggestion(
       if (!(error instanceof SyntaxError)) throw error;
     }
   }
-  return normalize(output);
+  const result = normalize(output);
+  return input.question ? groundNumbers(result, input.metrics) : result;
 }
 
 function providerError(status: number, provider: string) {
