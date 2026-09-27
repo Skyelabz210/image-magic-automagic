@@ -5,11 +5,14 @@ import {
   useEffect,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { toast } from "sonner";
 import type { AutoTune, Channel, Enhancement, Probe, ProbeType, Raster } from "./engine/processing";
 import { ALGORITHM_VERSION, validateFile } from "./engine/processing";
+import type { RegionMeasurements } from "./engine/region";
 import { downloadBlob, isAbort, outputName, rasterToBlob, readRaster } from "./engine/image-io";
 import {
   addEntry,
@@ -30,6 +33,12 @@ import {
 } from "./engine/pipeline";
 
 export type Layer = "original" | "enhanced" | "entropy" | "mask";
+export type SavedRegion = {
+  id: string;
+  name: string;
+  metrics: RegionMeasurements;
+  masked?: boolean;
+};
 export type Source = {
   name: string;
   size: number;
@@ -55,6 +64,8 @@ type Ctx = {
   tune: AutoTune | null;
   busy: string | null;
   ledger: LedgerEntry[];
+  savedRegions: SavedRegion[];
+  setSavedRegions: Dispatch<SetStateAction<SavedRegion[]>>;
   loadFile: (f: File) => Promise<void>;
   reset: () => void;
   runEnhance: (p?: { threshold: number; strength: number }) => Promise<void>;
@@ -88,6 +99,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [tune, setTune] = useState<AutoTune | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
+  const [savedRegions, setSavedRegions] = useState<SavedRegion[]>([]);
   const ledgerRef = useRef<LedgerEntry[]>([]);
   const ledgerReady = useRef<Promise<void>>(Promise.resolve());
   const recordQueue = useRef<Promise<void>>(Promise.resolve());
@@ -172,6 +184,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       signal.throwIfAborted();
       if (source) URL.revokeObjectURL(source.url);
       clearOutputs();
+      setSavedRegions([]);
       setSource({
         name: file.name,
         size: file.size,
@@ -202,6 +215,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     abortRef.current?.abort();
     if (source) URL.revokeObjectURL(source.url);
     clearOutputs();
+    setSavedRegions([]);
     setSource(null);
     setBusy(null);
   };
@@ -401,6 +415,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         tune,
         busy,
         ledger,
+        savedRegions,
+        setSavedRegions,
         loadFile,
         reset,
         runEnhance,

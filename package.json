@@ -17,6 +17,10 @@
     "rolldown": "1.2.1"
   },
   "dependencies": {
+    "@contentauth/c2pa-types": "^0.7.5",
+    "@contentauth/c2pa-utilities": "^0.3.1",
+    "@contentauth/c2pa-wasm": "^0.13.1",
+    "@contentauth/c2pa-web": "^0.15.2",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

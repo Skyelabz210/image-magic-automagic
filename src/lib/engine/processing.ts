@@ -10,12 +10,7 @@ export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const ALGORITHM_VERSION = "enhance-browser-v2";
 
 export function validateDimensions(width: number, height: number) {
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width < 1 ||
-    height < 1
-  ) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
     throw new Error("The image has invalid dimensions.");
   }
   if (width * height > MAX_PIXELS || Math.max(width, height) > MAX_DIMENSION) {
@@ -25,24 +20,11 @@ export function validateDimensions(width: number, height: number) {
   }
 }
 
-export function validateFile(file: {
-  size: number;
-  type: string;
-  name: string;
-}) {
+export function validateFile(file: { size: number; type: string; name: string }) {
   if (file.size === 0)
-    throw new Error(
-      "This file is empty. Choose a PNG, JPEG, WebP, or BMP image.",
-    );
-  if (file.size > MAX_FILE_BYTES)
-    throw new Error("This file exceeds the 50 MB limit.");
-  const supported = [
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/bmp",
-    "image/x-ms-bmp",
-  ];
+    throw new Error("This file is empty. Choose a PNG, JPEG, WebP, or BMP image.");
+  if (file.size > MAX_FILE_BYTES) throw new Error("This file exceeds the 50 MB limit.");
+  const supported = ["image/png", "image/jpeg", "image/webp", "image/bmp", "image/x-ms-bmp"];
   if (!(
     supported.includes(file.type) ||
     (!file.type && /\.(png|jpe?g|webp|bmp)$/i.test(file.name))
@@ -66,8 +48,7 @@ function blank(source: Raster): Raster {
 }
 
 function reflect(index: number, size: number) {
-  while (index < 0 || index >= size)
-    index = index < 0 ? -index - 1 : 2 * size - index - 1;
+  while (index < 0 || index >= size) index = index < 0 ? -index - 1 : 2 * size - index - 1;
   return index;
 }
 
@@ -87,11 +68,7 @@ export type Enhancement = {
  * This visual enhancement uses floating-point entropy and clamped 8-bit output.
  * The CRAM probes below operate directly on integer channel samples.
  */
-export function enhance(
-  source: Raster,
-  threshold: number,
-  strength: number,
-): Enhancement {
+export function enhance(source: Raster, threshold: number, strength: number): Enhancement {
   validateRaster(source);
   if (
     !Number.isFinite(threshold) ||
@@ -101,9 +78,7 @@ export function enhance(
     strength < 1 ||
     strength > 3
   ) {
-    throw new Error(
-      "Use an entropy threshold from 0 to 6.3 bits and strength from 1 to 3.",
-    );
+    throw new Error("Use an entropy threshold from 0 to 6.3 bits and strength from 1 to 3.");
   }
   const { width, height, data } = source;
   const enhanced = { width, height, data: new Uint8ClampedArray(data) };
@@ -114,9 +89,7 @@ export function enhance(
     const i = p * 4;
     gray[p] = (77 * data[i] + 150 * data[i + 1] + 29 * data[i + 2] + 128) >> 8;
   }
-  const nlogn = Array.from({ length: 82 }, (_, n) =>
-    n === 0 ? 0 : n * Math.log2(n),
-  );
+  const nlogn = Array.from({ length: 82 }, (_, n) => (n === 0 ? 0 : n * Math.log2(n)));
   let totalEntropy = 0,
     active = 0,
     visible = 0,
@@ -135,8 +108,7 @@ export function enhance(
       sum += nlogn[after] - nlogn[before];
       samples += delta;
     };
-    for (let yy = y - 4; yy <= y + 4; yy++)
-      for (let xx = -4; xx <= 4; xx++) change(xx, yy, 1);
+    for (let yy = y - 4; yy <= y + 4; yy++) for (let xx = -4; xx <= 4; xx++) change(xx, yy, 1);
     for (let x = 0; x < width; x++) {
       if (x > 0)
         for (let yy = y - 4; yy <= y + 4; yy++) {
@@ -146,22 +118,15 @@ export function enhance(
       const p = y * width + x,
         i = p * 4;
       if (data[i + 3] === 0) continue;
-      const bits =
-        samples > 0 ? Math.max(0, Math.log2(samples) - sum / samples) : 0;
+      const bits = samples > 0 ? Math.max(0, Math.log2(samples) - sum / samples) : 0;
       // Stabilize comparisons to slider precision against accumulated roundoff.
       const selected = bits + 1e-10 >= threshold;
       totalEntropy += bits;
       visible++;
       if (selected) active++;
       const heat = Math.round((bits * 255) / Math.log2(81));
-      entropy.data.set(
-        [heat, Math.max(24, 120 - (heat >> 2)), 205 - (heat >> 1), data[i + 3]],
-        i,
-      );
-      mask.data.set(
-        selected ? [60, 204, 183, data[i + 3]] : [22, 22, 22, data[i + 3]],
-        i,
-      );
+      entropy.data.set([heat, Math.max(24, 120 - (heat >> 2)), 205 - (heat >> 1), data[i + 3]], i);
+      mask.data.set(selected ? [60, 204, 183, data[i + 3]] : [22, 22, 22, data[i + 3]], i);
       const neighbors = [
         y * width + Math.max(0, x - 1),
         y * width + Math.min(width - 1, x + 1),
@@ -175,9 +140,7 @@ export function enhance(
         neighborWeight += data[n * 4 + 3];
       }
       const localMean = neighborWeight ? neighborSum / neighborWeight : gray[p];
-      const boost = selected
-        ? (gray[p] - localMean) * (strength - 1) * 0.68
-        : 0;
+      const boost = selected ? (gray[p] - localMean) * (strength - 1) * 0.68 : 0;
       let clipped = false;
       for (let c = 0; c < 3; c++) {
         const value = data[i + c] + boost;
@@ -199,8 +162,7 @@ export function enhance(
   };
 }
 
-const mod = (value: number, modulus: number) =>
-  ((value % modulus) + modulus) % modulus;
+const mod = (value: number, modulus: number) => ((value % modulus) + modulus) % modulus;
 
 /** K = (v36 − v37) mod 37, from CRAM-DSP STAR8; valid on [0, 1332). */
 export function keldBand(sample: number) {
@@ -212,9 +174,7 @@ export function keldBand(sample: number) {
 /** Independent lanes distinguish ±1 for every 8-bit step; product 1001 > 2×255. */
 export function laneUnitStep(a: number, b: number) {
   return [1, -1].some((target) =>
-    [7, 11, 13].every(
-      (lane) => mod((b % lane) - (a % lane), lane) === mod(target, lane),
-    ),
+    [7, 11, 13].every((lane) => mod((b % lane) - (a % lane), lane) === mod(target, lane)),
   );
 }
 
@@ -229,8 +189,7 @@ export function estimateBackgroundStep(fingerprints: number[]) {
   let best = 1;
   const max = nonflat.reduce((a, b) => Math.max(a, b), 1);
   for (let step = 2; step <= max; step++) {
-    if (nonflat.filter((n) => n % step === 0).length * 2 >= nonflat.length)
-      best = step;
+    if (nonflat.filter((n) => n % step === 0).length * 2 >= nonflat.length) best = step;
   }
   return best;
 }
@@ -242,23 +201,15 @@ export type Probe = {
   metrics: { label: string; value: string }[];
 };
 
-export function probe(
-  source: Raster,
-  type: ProbeType,
-  channel: Channel,
-): Probe {
+export function probe(source: Raster, type: ProbeType, channel: Channel): Probe {
   validateRaster(source);
-  if (
-    ![0, 1, 2].includes(channel) ||
-    !["keld", "lane", "quantization"].includes(type)
-  )
+  if (![0, 1, 2].includes(channel) || !["keld", "lane", "quantization"].includes(type))
     throw new Error("Unknown probe or channel.");
   const { width, height, data } = source,
     map = blank(source);
   const opaque = (p: number) => data[p * 4 + 3] === 255;
   const sample = (p: number) => data[p * 4 + channel];
-  const paint = (p: number, color: number[]) =>
-    map.data.set([...color, 255], p * 4);
+  const paint = (p: number, color: number[]) => map.data.set([...color, 255], p * 4);
   const metrics = [
     { label: "sample channel", value: ["Red", "Green", "Blue"][channel] },
     { label: "native dimensions", value: `${width} × ${height} px` },
@@ -328,8 +279,7 @@ export function probe(
             const p = yy * width + xx;
             if (!opaque(p)) continue;
             for (const q of [xx > x ? p - 1 : -1, yy > y ? p - width : -1]) {
-              if (q >= 0 && opaque(q))
-                step = gcd(step, Math.abs(sample(p) - sample(q)));
+              if (q >= 0 && opaque(q)) step = gcd(step, Math.abs(sample(p) - sample(q)));
             }
           }
         blocks.push({ x, y, step });
@@ -338,11 +288,7 @@ export function probe(
     for (const block of blocks) {
       const flagged = block.step !== 0 && block.step % background !== 0;
       if (flagged) count++;
-      const color = flagged
-        ? [235, 114, 74]
-        : block.step === 0
-          ? [55, 60, 65]
-          : [70, 150, 135];
+      const color = flagged ? [235, 114, 74] : block.step === 0 ? [55, 60, 65] : [70, 150, 135];
       for (let y = block.y; y < Math.min(height, block.y + 16); y++)
         for (let x = block.x; x < Math.min(width, block.x + 16); x++) {
           const p = y * width + x;
@@ -374,12 +320,15 @@ export type AutoTune = {
 function preview(source: Raster, maxSide: number): Raster {
   if (source.width * source.height <= maxSide * maxSide) return source;
   const tile = Math.floor(maxSide / 3);
-  const tw = Math.min(tile, source.width), th = Math.min(tile, source.height);
-  const width = tw * 3, height = th * 3;
+  const tw = Math.min(tile, source.width),
+    th = Math.min(tile, source.height);
+  const width = tw * 3,
+    height = th * 3;
   const data = new Uint8ClampedArray(width * height * 4);
   for (let gy = 0; gy < 3; gy++)
     for (let gx = 0; gx < 3; gx++) {
-      const ox = Math.round(((source.width - tw) * gx) / 2), oy = Math.round(((source.height - th) * gy) / 2);
+      const ox = Math.round(((source.width - tw) * gx) / 2),
+        oy = Math.round(((source.height - th) * gy) / 2);
       for (let y = 0; y < th; y++) {
         const src = ((oy + y) * source.width + ox) * 4;
         data.set(source.data.subarray(src, src + tw * 4), ((gy * th + y) * width + gx * tw) * 4);

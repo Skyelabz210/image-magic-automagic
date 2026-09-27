@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { applyTool } from "../src/lib/engine/tools";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
 import { measureRegion } from "../src/lib/engine/region";
+import { stressReport } from "../cli/reliability";
 
 test("pixel tools preserve alpha, dimensions and input; median removes a hot pixel", () => {
   const data = new Uint8ClampedArray(3 * 3 * 4);
@@ -42,6 +43,49 @@ test("regional counts use native coordinates and exclude partially transparent s
   const whole = measureRegion(raster, { x: 0, y: 0, width: 2, height: 2 });
   assert.equal(whole.excludedPixels, 1);
   assert.throws(() => measureRegion(raster, { x: 1, y: 1, width: 2, height: 2 }), /within/);
+});
+
+test("segmentation mask selects exact pixels and rejects mismatched geometry", () => {
+  const source = {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray([
+      10, 10, 10, 255, 20, 20, 20, 255, 30, 30, 30, 255, 40, 40, 40, 255,
+    ]),
+  };
+  const mask = {
+    width: 2,
+    height: 2,
+    data: new Uint8ClampedArray([
+      255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 0, 255, 255, 255, 255,
+    ]),
+  };
+  const measured = measureRegion(source, { x: 0, y: 0, width: 2, height: 2 }, mask);
+  assert.equal(measured.opaquePixels, 2);
+  assert.equal(measured.channels[0].mean, 25);
+  assert.equal(measured.channels[0].adjacentStepGcd, 0);
+  assert.throws(
+    () =>
+      measureRegion(
+        source,
+        { x: 0, y: 0, width: 2, height: 2 },
+        { width: 1, height: 4, data: mask.data },
+      ),
+    /Mask dimensions/,
+  );
+});
+
+test("stress differences ignore invisible RGB and expose alpha population shifts", async () => {
+  const transparent = {
+    width: 4,
+    height: 4,
+    data: Uint8ClampedArray.from({ length: 64 }, (_, i) => (i % 4 === 3 ? 0 : 255)),
+  };
+  const report = await stressReport(transparent);
+  assert.equal(report.variants[0]?.sourceOpaquePixels, 0);
+  assert.equal(report.variants[1]?.comparedOpaquePixels, 0);
+  assert.equal(report.variants[1]?.meanAbsoluteRgbDifference, null);
+  assert.equal(report.variants[1]?.opacityChangedPixels, 16);
 });
 
 test("Gemini sends inline preview and extracts only completed model text", async () => {
@@ -85,6 +129,44 @@ test("Gemini sends inline preview and extracts only completed model text", async
     ),
     /server/,
   );
+});
+
+test("regional AI answer rejects numerical claims absent from supplied measurements", async () => {
+  const metrics = { region1: "Region 1 green mean=42.00, entropy=3.250" };
+  const call = (summary: string) =>
+    requestSuggestion(
+      {
+        provider: "gemini",
+        image: "data:image/jpeg;base64,YWJj",
+        metrics,
+        question: "Compare this region",
+      },
+      {
+        env: { GEMINI_API_KEY: "test" },
+        fetch: async () =>
+          Response.json({
+            status: "completed",
+            steps: [
+              {
+                type: "model_output",
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      threshold: null,
+                      strength: null,
+                      summary,
+                      observations: [],
+                    }),
+                  },
+                ],
+              },
+            ],
+          }),
+      },
+    );
+  assert.match((await call("Region 1 has a green mean of 42 and entropy 3.25.")).summary, /42/);
+  await assert.rejects(call("Region 1 has a green mean of 99."), /absent/);
 });
 
 test("CLI pipeline produces a PNG and measured output hash", async () => {

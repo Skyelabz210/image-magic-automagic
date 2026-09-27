@@ -18,10 +18,17 @@ export type RegionMeasurements = {
 };
 
 /** Native pixel coordinates; only fully opaque samples participate in forensic counts. */
-export function measureRegion(source: Raster, region: Region): RegionMeasurements {
+export function measureRegion(source: Raster, region: Region, mask?: Raster): RegionMeasurements {
   validateDimensions(source.width, source.height);
   if (source.data.length !== source.width * source.height * 4)
     throw new Error("Invalid RGBA pixel buffer.");
+  if (
+    mask &&
+    (mask.width !== source.width ||
+      mask.height !== source.height ||
+      mask.data.length !== source.data.length)
+  )
+    throw new Error("Mask dimensions must match the original image exactly.");
   const { x, y, width, height } = region;
   if (
     [x, y, width, height].some((n) => !Number.isSafeInteger(n)) ||
@@ -44,6 +51,14 @@ export function measureRegion(source: Raster, region: Region): RegionMeasurement
   for (let yy = y; yy < y + height; yy++)
     for (let xx = x; xx < x + width; xx++) {
       const i = (yy * source.width + xx) * 4;
+      // A segmentation mask may use either opaque white on black or white on
+      // transparency. Partial alpha and soft grayscale are thresholded at 128.
+      if (
+        mask &&
+        (mask.data[i + 3]! < 128 ||
+          (mask.data[i]! + mask.data[i + 1]! + mask.data[i + 2]!) / 3 < 128)
+      )
+        continue;
       if (data[i + 3] !== 255) continue;
       opaque++;
       for (let c = 0; c < 3; c++) {
@@ -52,7 +67,14 @@ export function measureRegion(source: Raster, region: Region): RegionMeasurement
         sums[c]! += v;
         bands[c]!.add(keldBand(v));
         for (const n of [xx > x ? i - 4 : -1, yy > y ? i - source.width * 4 : -1]) {
-          if (n < 0 || data[n + 3] !== 255) continue;
+          if (
+            n < 0 ||
+            data[n + 3] !== 255 ||
+            (mask &&
+              (mask.data[n + 3]! < 128 ||
+                (mask.data[n]! + mask.data[n + 1]! + mask.data[n + 2]!) / 3 < 128))
+          )
+            continue;
           steps[c] = gcd(steps[c]!, Math.abs(v - data[n + c]!));
           if (laneUnitStep(data[n + c]!, v)) unitSteps[c]!++;
         }

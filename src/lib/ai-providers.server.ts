@@ -1,7 +1,7 @@
 import type { AiSuggestion } from "./ai.functions";
 
 export type AiProvider = "lovable" | "gemini";
-const PROMPT = `You are an image-forensics assistant inside ENHANCE!. Tools: entropy enhancement (threshold 0–6.3 bits selects pixels by 9x9 Shannon entropy; strength 1–3 sharpens selected luminance), KELD band map, lane-comb unit-step probe and 16x16 quantization fingerprint (GCD) probe. Look at the image and measurements, then reply ONLY as JSON: {"threshold":number,"strength":number,"summary":string,"observations":string[]}. Give 2–4 short observations and suggest which probe to check next. Be concrete and cautious; never claim tampering as fact.`;
+const PROMPT = `You are an image-forensics assistant inside ENHANCE!. Tools: entropy enhancement (threshold 0–6.3 bits selects pixels by 9x9 Shannon entropy; strength 1–3 sharpens selected luminance), KELD band map, lane-comb unit-step probe and 16x16 decoded-pixel GCD probe. The preview can be downscaled; measurements are client-provided and are not independently verified by this service. If a region question is asked, answer it using only visible preview detail and explicitly supplied measurements; distinguish observation from inference, cite region names and measured values, and say when the preview is insufficient. Never invent measurements or assert tampering as fact. Reply ONLY as JSON: {"threshold":number|null,"strength":number|null,"summary":string,"observations":string[]}. Give 2–4 short observations.`;
 
 function normalize(text: string): AiSuggestion {
   const match = text.match(/\{[\s\S]*\}/);
@@ -32,11 +32,29 @@ function normalize(text: string): AiSuggestion {
   };
 }
 
+/** Advisory prose may restate measurements but may not invent measured numbers. */
+function groundNumbers(result: AiSuggestion, metrics: Record<string, string | number>) {
+  const numeric = (text: string) =>
+    [...text.matchAll(/(?<![\w.])-?\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  const supplied = new Set(
+    Object.entries(metrics)
+      .filter(([key]) => !/hash|sha256/i.test(key))
+      .flatMap(([key, value]) => numeric(`${key} ${value}`)),
+  );
+  const claimed = numeric([result.summary, ...result.observations].join(" "));
+  if (claimed.some((n) => !supplied.has(n)))
+    throw new Error(
+      "AI cited a number absent from the supplied regional measurements. Please try again.",
+    );
+  return result;
+}
+
 export async function requestSuggestion(
   input: {
     provider: AiProvider;
     image: string;
     metrics: Record<string, string | number>;
+    question?: string | undefined;
   },
   dependencies: { env?: NodeJS.ProcessEnv; fetch?: typeof globalThis.fetch } = {},
 ): Promise<AiSuggestion> {
@@ -47,7 +65,9 @@ export async function requestSuggestion(
     throw new Error(
       `${input.provider === "gemini" ? "Gemini" : "Lovable"} AI is not configured on the server.`,
     );
-  const prompt = `${PROMPT}\n\nMeasurements: ${JSON.stringify(input.metrics)}`;
+  if (input.question && (input.question.length > 300 || !input.question.trim()))
+    throw new Error("Question must be between 1 and 300 characters.");
+  const prompt = `${PROMPT}\n\nMeasurements: ${JSON.stringify(input.metrics)}${input.question ? `\n\nRegion question: ${input.question}` : ""}`;
   const image = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(input.image);
   if (!image || input.image.length > 3_000_000)
     throw new Error("Use a small JPEG, PNG, or WebP preview.");
@@ -77,7 +97,8 @@ export async function requestSuggestion(
       .filter((part: { type: string }) => part.type === "text")
       .map((part: { text?: string }) => part.text ?? "")
       .join("");
-    return normalize(output ?? "");
+    const suggestion = normalize(output ?? "");
+    return input.question ? groundNumbers(suggestion, input.metrics) : suggestion;
   }
 
   const res = await fetcher("https://ai.gateway.lovable.dev/v1/responses", {
@@ -118,7 +139,8 @@ export async function requestSuggestion(
       if (!(error instanceof SyntaxError)) throw error;
     }
   }
-  return normalize(output);
+  const result = normalize(output);
+  return input.question ? groundNumbers(result, input.metrics) : result;
 }
 
 function providerError(status: number, provider: string) {
