@@ -17,13 +17,12 @@ export const Route = createFileRoute("/evidence")({
       {
         name: "description",
         content:
-          "Exact integer probes: KELD band maps, lane-comb unit steps, and quantization fingerprints per RGB channel.",
+          "Exact integer probes: KELD band maps, lane-comb unit steps, pixel-step GCD and regional measurements.",
       },
       { property: "og:title", content: "Evidence Lab — ENHANCE!" },
       {
         property: "og:description",
-        content:
-          "Exact integer probes: KELD band maps, lane-comb unit steps, and quantization fingerprints.",
+        content: "Exact integer probes: KELD band maps, lane-comb unit steps and pixel-step GCD.",
       },
     ],
   }),
@@ -43,8 +42,8 @@ const PROBES: { id: ProbeType; label: string; desc: string }[] = [
   },
   {
     id: "quantization",
-    label: "Quantization",
-    desc: "GCD fingerprint of 16×16 blocks; orange blocks disagree with background step.",
+    label: "Pixel step GCD",
+    desc: "Decoded RGB steps in 16×16 blocks; a pixel quantization proxy, not a JPEG DCT/DQT measurement.",
   },
 ];
 

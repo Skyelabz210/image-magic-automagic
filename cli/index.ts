@@ -25,6 +25,7 @@ Options:
   --threshold N        Enhancement threshold, 0–6.3
   --strength N         Enhancement strength, 1–3
   --probe NAME         keld | lane | quantization
+                      quantization measures decoded pixel-step GCD, not JPEG DCT/DQT
   --channel NAME       red | green | blue (default green)
   --tool NAME          ${TOOL_NAMES.join(" | ")}
   --amount N           Integer for brightness (-255..255), contrast (0..100), threshold (0..255)
