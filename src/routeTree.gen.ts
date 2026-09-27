@@ -14,6 +14,7 @@ import { Route as BatchRouteImport } from './routes/batch'
 import { Route as EvidenceRouteImport } from './routes/evidence'
 import { Route as ReceiptsRouteImport } from './routes/receipts'
 import { Route as SpectralRouteImport } from './routes/spectral'
+import { Route as ToolsRouteImport } from './routes/tools'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const SpectralRoute = SpectralRouteImport.update({
   path: '/spectral',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ToolsRoute = ToolsRouteImport.update({
+  id: '/tools',
+  path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/evidence': typeof EvidenceRoute
   '/receipts': typeof ReceiptsRoute
   '/spectral': typeof SpectralRoute
+  '/tools': typeof ToolsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/evidence': typeof EvidenceRoute
   '/receipts': typeof ReceiptsRoute
   '/spectral': typeof SpectralRoute
+  '/tools': typeof ToolsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,21 @@ export interface FileRoutesById {
   '/evidence': typeof EvidenceRoute
   '/receipts': typeof ReceiptsRoute
   '/spectral': typeof SpectralRoute
+  '/tools': typeof ToolsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/batch' | '/evidence' | '/receipts' | '/spectral'
+  fullPaths: '/' | '/batch' | '/evidence' | '/receipts' | '/spectral' | '/tools'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/batch' | '/evidence' | '/receipts' | '/spectral'
-  id: '__root__' | '/' | '/batch' | '/evidence' | '/receipts' | '/spectral'
+  to: '/' | '/batch' | '/evidence' | '/receipts' | '/spectral' | '/tools'
+  id:
+    | '__root__'
+    | '/'
+    | '/batch'
+    | '/evidence'
+    | '/receipts'
+    | '/spectral'
+    | '/tools'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,6 +93,7 @@ export interface RootRouteChildren {
   EvidenceRoute: typeof EvidenceRoute
   ReceiptsRoute: typeof ReceiptsRoute
   SpectralRoute: typeof SpectralRoute
+  ToolsRoute: typeof ToolsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -116,6 +133,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SpectralRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tools': {
+      id: '/tools'
+      path: '/tools'
+      fullPath: '/tools'
+      preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -125,6 +149,7 @@ const rootRouteChildren: RootRouteChildren = {
   EvidenceRoute: EvidenceRoute,
   ReceiptsRoute: ReceiptsRoute,
   SpectralRoute: SpectralRoute,
+  ToolsRoute: ToolsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
