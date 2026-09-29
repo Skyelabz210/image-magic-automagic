@@ -231,6 +231,10 @@ function EnhancePage() {
               value={[strength]}
               onValueChange={([v]) => ws.setStrength(v ?? 1)}
             />
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Lower threshold = more of the image gets sharpened. Higher strength = stronger
+              sharpening (watch the clipped count).
+            </p>
             <div className="mt-5 flex gap-2">
               <Button
                 className="flex-1"
