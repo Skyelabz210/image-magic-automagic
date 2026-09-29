@@ -26,13 +26,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               digital image processing
             </span>
           </Link>
-          <nav className="flex flex-wrap gap-1">
+          <nav className="-mx-1 flex w-full gap-1 overflow-x-auto px-1 pb-1 md:w-auto md:flex-wrap md:overflow-visible md:pb-0">
             {NAV.map((n) => (
               <Link
                 key={n.to}
                 to={n.to}
                 activeOptions={{ exact: true }}
-                className="rounded-md px-3 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                className="shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 activeProps={{ className: "bg-secondary !text-foreground" }}
               >
                 <span className="mr-1.5 text-primary">{n.k}</span>

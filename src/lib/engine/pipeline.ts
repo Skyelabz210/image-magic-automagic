@@ -88,13 +88,16 @@ export async function runFullPipeline(
   const tune = await workerAutoTune(raster, signal);
   const threshold = override?.threshold ?? tune.threshold;
   const strength = override?.strength ?? tune.strength;
-  onStep?.("Enhancing");
-  const enhancement = await workerEnhance(raster, threshold, strength, signal);
-  const probes = {} as Record<ProbeType, Probe>;
-  for (const p of PROBES) {
-    onStep?.(`Probe: ${p}`);
-    probes[p] = await workerProbe(raster, p, channel, signal);
-  }
+  onStep?.("Enhancing and probing in parallel");
+  // Each call runs in its own worker, so enhancement and probes proceed concurrently.
+  const [enhancement, ...probeResults] = await Promise.all([
+    workerEnhance(raster, threshold, strength, signal),
+    ...PROBES.map((p) => workerProbe(raster, p, channel, signal)),
+  ]);
+  const probes = Object.fromEntries(PROBES.map((p, i) => [p, probeResults[i]!])) as Record<
+    ProbeType,
+    Probe
+  >;
   onStep?.("Hashing outputs");
   const [rasterHash, png] = await Promise.all([
     rasterDigest(raster),

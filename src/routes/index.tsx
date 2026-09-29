@@ -129,7 +129,14 @@ function EnhancePage() {
             </>
           }
         >
-          <div className="checker flex max-h-[70vh] min-h-[360px] items-center justify-center overflow-auto rounded-md">
+          {!enhancement && (
+            <p className="mb-3 rounded-md border border-dashed bg-card p-2 text-xs text-muted-foreground">
+              New here? Press <span className="text-foreground">One-click full run</span> — the app
+              picks settings, enhances the image and runs every check. Then switch layers above to
+              compare.
+            </p>
+          )}
+          <div className="checker flex max-h-[70vh] min-h-[240px] items-center justify-center overflow-auto rounded-md md:min-h-[360px]">
             {url && (
               <img
                 src={url}
