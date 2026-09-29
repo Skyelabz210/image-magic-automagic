@@ -42,7 +42,8 @@ function EnhancePage() {
   const [ai, setAi] = useState<AiSuggestion | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<AiProvider>("lovable");
+  const [provider, setProvider] = useState<AiProvider>("gemini");
+  const [autoAi, setAutoAi] = useState(true);
   const stale = enhancement && ws.enhancedFor !== `${threshold}|${strength}`;
 
   const askAi = async () => {
@@ -175,7 +176,11 @@ function EnhancePage() {
               <Button
                 className="w-full justify-start"
                 disabled={!!busy}
-                onClick={() => ws.runAll().then(() => setLayer("enhanced"))}
+                onClick={async () => {
+                  await ws.runAll();
+                  setLayer("enhanced");
+                  if (autoAi) void askAi();
+                }}
               >
                 <Zap className="h-4 w-4" /> One-click full run
               </Button>
