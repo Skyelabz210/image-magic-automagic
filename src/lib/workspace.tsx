@@ -346,11 +346,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         r.enhancement,
         r.hashes.enhancedPng,
       );
-      for (const p of ["keld", "lane", "quantization"] as ProbeType[]) {
+      const probeTypes: ProbeType[] = ["keld", "lane", "quantization"];
+      const probeHashes = await Promise.all(probeTypes.map((p) => pngHash(r.probes[p].map)));
+      for (const [i, p] of probeTypes.entries()) {
         await record(`probe:${p}`, {
           channel: ["red", "green", "blue"][channel]!,
           count: r.probes[p].count,
-          outputSha256: (await pngHash(r.probes[p].map)).hash,
+          outputSha256: probeHashes[i]!.hash,
         });
       }
       const url = await blobUrl(r.probes.quantization.map);

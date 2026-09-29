@@ -7,3 +7,4 @@
 - [x] Batch processing
 - [x] One-click full run
 - [~] AI suggestions — built; blocked until workspace AI credits are added
+- [ ] Automated AI suggestions via Gemini free tier (needs GEMINI_API_KEY)

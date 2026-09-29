@@ -42,7 +42,8 @@ function EnhancePage() {
   const [ai, setAi] = useState<AiSuggestion | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<AiProvider>("lovable");
+  const [provider, setProvider] = useState<AiProvider>("gemini");
+  const [autoAi, setAutoAi] = useState(true);
   const stale = enhancement && ws.enhancedFor !== `${threshold}|${strength}`;
 
   const askAi = async () => {
@@ -129,7 +130,14 @@ function EnhancePage() {
             </>
           }
         >
-          <div className="checker flex max-h-[70vh] min-h-[360px] items-center justify-center overflow-auto rounded-md">
+          {!enhancement && (
+            <p className="mb-3 rounded-md border border-dashed bg-card p-2 text-xs text-muted-foreground">
+              New here? Press <span className="text-foreground">One-click full run</span> — the app
+              picks settings, enhances the image and runs every check. Then switch layers above to
+              compare.
+            </p>
+          )}
+          <div className="checker flex max-h-[70vh] min-h-[240px] items-center justify-center overflow-auto rounded-md md:min-h-[360px]">
             {url && (
               <img
                 src={url}
@@ -168,7 +176,11 @@ function EnhancePage() {
               <Button
                 className="w-full justify-start"
                 disabled={!!busy}
-                onClick={() => ws.runAll().then(() => setLayer("enhanced"))}
+                onClick={async () => {
+                  await ws.runAll();
+                  setLayer("enhanced");
+                  if (autoAi) void askAi();
+                }}
               >
                 <Zap className="h-4 w-4" /> One-click full run
               </Button>
@@ -224,6 +236,10 @@ function EnhancePage() {
               value={[strength]}
               onValueChange={([v]) => ws.setStrength(v ?? 1)}
             />
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Lower threshold = more of the image gets sharpened. Higher strength = stronger
+              sharpening (watch the clipped count).
+            </p>
             <div className="mt-5 flex gap-2">
               <Button
                 className="flex-1"
@@ -253,9 +269,17 @@ function EnhancePage() {
               }}
               className="mb-3 w-full rounded border bg-background p-2 text-sm"
             >
+              <option value="gemini">Google Gemini (free tier)</option>
               <option value="lovable">Lovable AI</option>
-              <option value="gemini">Google Gemini</option>
             </select>
+            <label className="mb-3 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={autoAi}
+                onChange={(e) => setAutoAi(e.target.checked)}
+              />
+              Ask AI automatically after each full run
+            </label>
             <Button
               variant="secondary"
               className="w-full justify-start"
