@@ -74,20 +74,26 @@ export async function requestSuggestion(
 
   if (input.provider === "gemini") {
     const model = env["GEMINI_MODEL"] ?? "gemini-3.8-flash";
-    if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new Error("Invalid Gemini model name.");
-    const res = await fetcher("https://generativelanguage.googleapis.com/v1beta/interactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        model,
-        store: false,
-        input: [
-          { type: "text", text: prompt },
-          { type: "image", data: image[2], mime_type: image[1] },
-        ],
-        response_format: { type: "text", mime_type: "application/json" },
-      }),
-    });
+    // Free-tier fallback when the main model is busy (503) or rate-limited (429).
+    const fallback = env["GEMINI_FALLBACK_MODEL"] ?? "gemini-3.5-flash-lite";
+    if (![model, fallback].every((m) => /^[a-zA-Z0-9._-]+$/.test(m)))
+      throw new Error("Invalid Gemini model name.");
+    const call = (m: string) =>
+      fetcher("https://generativelanguage.googleapis.com/v1beta/interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({
+          model: m,
+          store: false,
+          input: [
+            { type: "text", text: prompt },
+            { type: "image", data: image[2], mime_type: image[1] },
+          ],
+          response_format: { type: "text", mime_type: "application/json" },
+        }),
+      });
+    let res = await call(model);
+    if ((res.status === 503 || res.status === 429) && fallback !== model) res = await call(fallback);
     if (!res.ok) throw providerError(res.status, "Gemini");
     const result = await res.json();
     if (result.status !== "completed") throw new Error("Gemini did not finish its analysis.");

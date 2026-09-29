@@ -6,5 +6,6 @@
 - [x] Auto-tune settings per image
 - [x] Batch processing
 - [x] One-click full run
-- [~] AI suggestions — built; blocked until workspace AI credits are added
-- [ ] Automated AI suggestions via Gemini free tier (needs GEMINI_API_KEY)
+- [x] AI suggestions — Gemini default; Lovable AI needs workspace credits
+- [x] Automated AI suggestions via Gemini free tier (auto after full run, lite fallback)
+- [x] Refine: parallel full run, mobile nav, beginner hints

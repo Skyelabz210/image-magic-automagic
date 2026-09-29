@@ -62,7 +62,7 @@ The Provenance page validates Content Credentials in the browser from the import
 
 ## AI providers
 
-The browser defaults to Lovable AI. To use Gemini, configure `GEMINI_API_KEY` as a **server-side secret** in the deployment environment and select **Google Gemini** in the AI suggestions panel. Locally, put the secret in your shell environment or an untracked `.env.local`. Optional `GEMINI_MODEL` defaults to `gemini-3.8-flash`. Lovable continues using server-side `LOVABLE_API_KEY`.
+The browser defaults to Lovable AI. To use Gemini, configure `GEMINI_API_KEY` as a **server-side secret** in the deployment environment and select **Google Gemini** in the AI suggestions panel. Locally, put the secret in your shell environment or an untracked `.env.local`. Optional `GEMINI_MODEL` defaults to `gemini-3.8-flash`; when it is busy or rate-limited (free tier: 5 requests/minute) the server retries once with `GEMINI_FALLBACK_MODEL` (default `gemini-3.5-flash-lite`). Gemini is the default provider and can run automatically after each one-click full run. Lovable continues using server-side `LOVABLE_API_KEY`.
 
 ```sh
 GEMINI_API_KEY=your-key npm run cli -- suggest photo.jpg
