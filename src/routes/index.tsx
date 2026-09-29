@@ -269,9 +269,17 @@ function EnhancePage() {
               }}
               className="mb-3 w-full rounded border bg-background p-2 text-sm"
             >
+              <option value="gemini">Google Gemini (free tier)</option>
               <option value="lovable">Lovable AI</option>
-              <option value="gemini">Google Gemini</option>
             </select>
+            <label className="mb-3 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={autoAi}
+                onChange={(e) => setAutoAi(e.target.checked)}
+              />
+              Ask AI automatically after each full run
+            </label>
             <Button
               variant="secondary"
               className="w-full justify-start"
