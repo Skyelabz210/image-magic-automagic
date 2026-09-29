@@ -78,7 +78,9 @@ type Ctx = {
   clearLedger: () => void;
 };
 
-const WorkspaceContext = createContext<Ctx | null>(null);
+// Reuse one context across hot reloads so the provider and its readers never get out of sync.
+const store = globalThis as unknown as { __enhanceWorkspace?: React.Context<Ctx | null> };
+const WorkspaceContext = (store.__enhanceWorkspace ??= createContext<Ctx | null>(null));
 export const useWorkspace = () => {
   const c = useContext(WorkspaceContext);
   if (!c) throw new Error("useWorkspace outside provider");
