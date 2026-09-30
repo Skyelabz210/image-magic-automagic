@@ -79,7 +79,7 @@ type Ctx = {
 };
 
 // Reuse one context across hot reloads so the provider and its readers never get out of sync.
-const store = globalThis as unknown as { __enhanceWorkspace?: React.Context<Ctx | null> };
+const store = globalThis as unknown as { __enhanceWorkspace?: import("react").Context<Ctx | null> };
 const WorkspaceContext = (store.__enhanceWorkspace ??= createContext<Ctx | null>(null));
 export const useWorkspace = () => {
   const c = useContext(WorkspaceContext);
