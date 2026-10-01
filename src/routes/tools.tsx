@@ -45,7 +45,11 @@ function ToolsPage() {
     const options = {
       name,
       amount:
-        name === "brightness" ? amount - 128 : name === "contrast" ? Math.min(100, amount) : amount,
+        name === "brightness"
+          ? amount - 128
+          : name === "contrast" || name === "manuscript"
+            ? Math.min(100, amount)
+            : amount,
       channel,
     };
     const controller = new AbortController();
@@ -91,6 +95,7 @@ function ToolsPage() {
               value={name}
               onChange={(event) => {
                 setName(event.target.value as ToolName);
+                if (event.target.value === "manuscript") setAmount(100);
                 invalidate();
               }}
               className="mt-1 w-full rounded border bg-background p-2 text-sm"
@@ -101,19 +106,24 @@ function ToolsPage() {
                 </option>
               ))}
             </select>
-            {(name === "brightness" || name === "contrast" || name === "threshold") && (
+            {(name === "brightness" ||
+              name === "contrast" ||
+              name === "threshold" ||
+              name === "manuscript") && (
               <label className="mt-4 block text-sm" htmlFor="amount">
                 {name === "brightness"
                   ? "Brightness (−128 to +127)"
                   : name === "contrast"
                     ? "Contrast (0–100%)"
-                    : "Threshold (0–255)"}
+                    : name === "manuscript"
+                      ? "Reading contrast (0–100%)"
+                      : "Threshold (0–255)"}
                 <input
                   id="amount"
                   type="range"
                   min="0"
-                  max={name === "contrast" ? 100 : 255}
-                  value={Math.min(amount, name === "contrast" ? 100 : 255)}
+                  max={name === "contrast" || name === "manuscript" ? 100 : 255}
+                  value={Math.min(amount, name === "contrast" || name === "manuscript" ? 100 : 255)}
                   onChange={(event) => {
                     setAmount(Number(event.target.value));
                     invalidate();
@@ -123,9 +133,15 @@ function ToolsPage() {
                 <span className="font-mono text-xs">
                   {name === "brightness"
                     ? amount - 128
-                    : Math.min(amount, name === "contrast" ? 100 : 255)}
+                    : Math.min(amount, name === "contrast" || name === "manuscript" ? 100 : 255)}
                 </span>
               </label>
+            )}
+            {name === "manuscript" && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                A derived reading view for uneven manuscript backgrounds. Compare faint marks with
+                the original before transcribing; the receipt records the output hash.
+              </p>
             )}
             {name === "channel" && (
               <select
@@ -161,12 +177,29 @@ function ToolsPage() {
             )}
           </Panel>
           <Panel title="Preview" kicker={result ? result.hash.slice(0, 12) : "original"}>
-            <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
-              <img
-                src={result?.url ?? ws.source.url}
-                alt={result ? `${name} output` : "Original"}
-                className="max-h-[70vh] max-w-full object-contain"
-              />
+            <div className={result ? "grid gap-3 md:grid-cols-2" : ""}>
+              <div>
+                <p className="mb-2 font-mono text-xs text-muted-foreground">Original</p>
+                <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
+                  <img
+                    src={ws.source.url}
+                    alt="Original imported image"
+                    className="max-h-[70vh] max-w-full object-contain"
+                  />
+                </div>
+              </div>
+              {result && (
+                <div>
+                  <p className="mb-2 font-mono text-xs text-muted-foreground">Derived: {name}</p>
+                  <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
+                    <img
+                      src={result.url}
+                      alt={`${name} output`}
+                      className="max-h-[70vh] max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </Panel>
         </div>

@@ -8,7 +8,7 @@ A browser image workspace based on [Digisl-Image-Processing-App](https://github.
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Enhance        | Native resolution 9×9 Shannon entropy, thresholded luminance enhancement, mask and entropy map, auto tuning, full run                                                                 |
 | Evidence Lab   | KELD STAR8 band map, 7/11/13 lane comb unit steps, 16×16 pixel-step GCD map, JPEG DQT inspection, named region comparison, external segmentation masks and opt-in AI region questions |
-| Image Tools    | Invert, grayscale, signed brightness, contrast, channel isolation, threshold, Sobel edge map, 3×3 median filter                                                                       |
+| Image Tools    | Invert, grayscale, signed brightness, contrast, channel isolation, threshold, Sobel edge map, 3×3 median filter, manuscript reading view                                              |
 | Batch          | Multiple images, automatic enhancement, probe counts, per image report                                                                                                                |
 | Spectral Lab   | Seven spectral reference illustrations with method notes                                                                                                                              |
 | Provenance     | Local SHA-256 chained receipt ledger, original and exported PNG hashes, on-demand browser C2PA Content Credentials validation                                                         |
@@ -46,11 +46,14 @@ npm run cli -- enhance photo.jpg --threshold 3.5 --strength 1.8 --output enhance
 npm run cli -- probe photo.jpg --probe quantization --channel green --output blocks.png
 npm run cli -- pipeline photo.jpg --output enhanced.png
 npm run cli -- tool photo.jpg --tool median --output median.png
+npm run cli -- tool codex-page.jpg --tool manuscript --amount 100 --output reading.png
 npm run cli -- tool photo.jpg --tool brightness --amount -25 --output darker.png
 npm run cli -- batch a.jpg b.png --output ./results
 ```
 
 Commands write a JSON report to stdout; image commands write PNGs. Batch keeps going on individual errors and exits with code 1 if any image failed. Input is limited to 50 MB, 16 million pixels and 8,192 pixels per side. `sharp` reads common formats including JPEG, PNG, WebP and BMP. The CLI applies EXIF orientation and converts to sRGB before processing; browser and CLI decoding may still differ slightly by platform. PNG hashes describe the exported file and can differ between encoders; raster hashes describe decoded RGBA8 pixels.
+
+`tool --tool manuscript` makes an optional derived reading view for photographed ink on uneven paper. It estimates a local background with an alpha-weighted box filter and applies a smooth contrast curve. `--amount 0` copies the source pixels; `--amount 100` applies the full reading view. The original import stays available for comparison, and the PNG output hash is recorded. This view can emphasize paper fibers or faded pigment along with ink; inspect the original at the same pixel coordinates before transcribing a mark. [The three-page Codex trial](docs/codex-page-evaluation-2026-10-01.md) reports the measured tradeoff.
 
 The `jpeg-structure` command reads original bytes and lists markers, DQT values in encoded zigzag order, frame sampling, scans and APP metadata signatures (JFIF, EXIF orientation, ICC, XMP and APP11 JUMBF). APP11 presence is a structural observation; run credential validation to verify a claim. The command does not extract DCT coefficients or infer double compression. `stress` runs fixed JPEG quality 85/60, double JPEG, half-size and Gaussian blur variants on images up to 2 million pixels; the report gives probe counts and differences for **one input image**. RGB differences use pixels fully opaque in both versions; the report records changes in opacity population, and returns null when no pixels can be compared. The numbers have no ground-truth label, confidence or accuracy meaning.
 

@@ -93,7 +93,8 @@ export async function requestSuggestion(
         }),
       });
     let res = await call(model);
-    if ((res.status === 503 || res.status === 429) && fallback !== model) res = await call(fallback);
+    if ((res.status === 503 || res.status === 429) && fallback !== model)
+      res = await call(fallback);
     if (!res.ok) throw providerError(res.status, "Gemini");
     const result = await res.json();
     if (result.status !== "completed") throw new Error("Gemini did not finish its analysis.");
