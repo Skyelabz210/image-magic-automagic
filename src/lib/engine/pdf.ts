@@ -26,7 +26,7 @@ export async function pdfToImages(file: File): Promise<File[]> {
       const ctx = canvas.getContext("2d")!;
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport }).promise;
       const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
       canvas.width = canvas.height = 0;
       if (!blob) throw new Error("A PDF page could not be converted.");
