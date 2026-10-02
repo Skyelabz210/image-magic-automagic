@@ -10,6 +10,7 @@ import { Metric, PageTitle, Panel } from "@/components/shell";
 import { downloadLayer, previewDataUrl, useWorkspace, type Layer } from "@/lib/workspace";
 import { suggestSettings, type AiSuggestion } from "@/lib/ai.functions";
 import { cn } from "@/lib/utils";
+import { InspectionViewer } from "@/components/inspection-viewer";
 import type { AiProvider } from "@/lib/ai-providers.server";
 
 export const Route = createFileRoute("/")({
@@ -32,7 +33,7 @@ export const Route = createFileRoute("/")({
   component: EnhancePage,
 });
 
-const LAYERS: Layer[] = ["original", "enhanced", "entropy", "mask"];
+const LAYERS: Layer[] = ["original", "enhanced", "entropy", "mask", "difference"];
 
 function EnhancePage() {
   const ws = useWorkspace();
@@ -43,10 +44,13 @@ function EnhancePage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [provider, setProvider] = useState<AiProvider>("gemini");
-  const [autoAi, setAutoAi] = useState(true);
+  const [autoAi, setAutoAi] = useState(false);
   const stale = enhancement && ws.enhancedFor !== `${threshold}|${strength}`;
 
-  const askAi = async () => {
+  const askAi = async (completed?: {
+    enhancement: NonNullable<typeof enhancement>;
+    tune: NonNullable<typeof tune>;
+  }) => {
     if (!source) return;
     setAiBusy(true);
     setAiError(null);
@@ -54,17 +58,21 @@ function EnhancePage() {
       const metrics: Record<string, string | number> = {
         width: source.raster.width,
         height: source.raster.height,
-        currentThreshold: threshold,
-        currentStrength: strength,
+        currentThreshold: completed?.tune.threshold ?? threshold,
+        currentStrength: completed?.tune.strength ?? strength,
       };
-      if (enhancement)
+      const measured = completed?.enhancement ?? enhancement;
+      if (measured)
         Object.assign(metrics, {
-          meanEntropy: +enhancement.meanEntropy.toFixed(3),
-          activePercent: +enhancement.activePercent.toFixed(1),
-          clippedPixels: enhancement.clippedPixels,
+          meanEntropy: +measured.meanEntropy.toFixed(3),
+          activePercent: +measured.activePercent.toFixed(1),
+          clippedPixels: measured.clippedPixels,
         });
-      if (tune)
-        Object.assign(metrics, { autoThreshold: tune.threshold, autoStrength: tune.strength });
+      if (completed?.tune ?? tune)
+        Object.assign(metrics, {
+          autoThreshold: (completed?.tune ?? tune)!.threshold,
+          autoStrength: (completed?.tune ?? tune)!.strength,
+        });
       const r = await suggest({
         data: { image: previewDataUrl(source.raster), metrics, provider },
       });
@@ -137,16 +145,21 @@ function EnhancePage() {
               compare.
             </p>
           )}
-          <div className="checker flex max-h-[70vh] min-h-[240px] items-center justify-center overflow-auto rounded-md md:min-h-[360px]">
-            {url && (
-              <img
-                src={url}
-                alt={`${layer} layer`}
-                className="max-h-[68vh] max-w-full object-contain"
-                style={{ imageRendering: "auto" }}
-              />
-            )}
-          </div>
+          <InspectionViewer
+            original={layerUrls.original!}
+            derived={
+              layer === "original"
+                ? layerUrls.enhanced
+                : layer === "enhanced"
+                  ? layerUrls.enhanced
+                  : layer === "difference"
+                    ? undefined
+                    : url
+            }
+            derivedLabel={layer}
+            difference={layerUrls.difference}
+            initialMode={layer === "difference" ? "difference" : "split"}
+          />
           <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
             <Metric label="dimensions" value={`${source.raster.width}×${source.raster.height}`} />
             <Metric
@@ -177,9 +190,11 @@ function EnhancePage() {
                 className="w-full justify-start"
                 disabled={!!busy}
                 onClick={async () => {
-                  await ws.runAll();
-                  setLayer("enhanced");
-                  if (autoAi) void askAi();
+                  const completed = await ws.runAll();
+                  if (completed) {
+                    setLayer("enhanced");
+                    if (autoAi) void askAi(completed);
+                  }
                 }}
               >
                 <Zap className="h-4 w-4" /> One-click full run
@@ -284,7 +299,7 @@ function EnhancePage() {
               variant="secondary"
               className="w-full justify-start"
               disabled={aiBusy}
-              onClick={askAi}
+              onClick={() => void askAi()}
             >
               <Sparkles className={cn("h-4 w-4 text-primary", aiBusy && "animate-pulse")} />{" "}
               {aiBusy ? "Analyzing image…" : "Analyze & suggest settings"}

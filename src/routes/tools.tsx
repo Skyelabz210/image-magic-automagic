@@ -6,9 +6,11 @@ import { Dropzone } from "@/components/dropzone";
 import { PageTitle, Panel } from "@/components/shell";
 import { downloadBlob, rasterToBlob } from "@/lib/engine/image-io";
 import { workerTool } from "@/lib/engine/pipeline";
+import { workerRecipe, workerDifference } from "@/lib/engine/pipeline";
 import { sha256 } from "@/lib/engine/provenance";
-import { TOOL_NAMES, type ToolName } from "@/lib/engine/tools";
+import { RECIPES, TOOL_NAMES, type ToolName, type ToolOptions } from "@/lib/engine/tools";
 import { useWorkspace } from "@/lib/workspace";
+import { InspectionViewer } from "@/components/inspection-viewer";
 
 export const Route = createFileRoute("/tools")({
   component: ToolsPage,
@@ -20,12 +22,21 @@ function ToolsPage() {
   const [name, setName] = useState<ToolName>("grayscale");
   const [amount, setAmount] = useState(128);
   const [channel, setChannel] = useState<0 | 1 | 2>(0);
-  const [result, setResult] = useState<{ url: string; blob: Blob; hash: string } | null>(null);
+  const [steps, setSteps] = useState<ToolOptions[]>([]);
+  const [result, setResult] = useState<{
+    url: string;
+    diff: string;
+    blob: Blob;
+    hash: string;
+  } | null>(null);
   const [running, setRunning] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
-      if (result) URL.revokeObjectURL(result.url);
+      if (result) {
+        URL.revokeObjectURL(result.url);
+        URL.revokeObjectURL(result.diff);
+      }
     },
     [result],
   );
@@ -39,35 +50,40 @@ function ToolsPage() {
     setRunning(false);
     setResult(null);
   };
+  const option = (): ToolOptions => ({
+    name,
+    amount:
+      name === "brightness"
+        ? amount - 128
+        : ["contrast", "manuscript", "undertext", "parchment"].includes(name)
+          ? Math.min(100, amount)
+          : amount,
+    channel,
+  });
   const run = async () => {
     if (!ws.source) return;
     const current = ws.source;
-    const options = {
-      name,
-      amount:
-        name === "brightness"
-          ? amount - 128
-          : name === "contrast" || name === "manuscript"
-            ? Math.min(100, amount)
-            : amount,
-      channel,
-    };
+    const options = option();
+    const applied = steps.length ? steps : [options];
     const controller = new AbortController();
     controllerRef.current?.abort();
     controllerRef.current = controller;
     setRunning(true);
     try {
-      const raster = await workerTool(current.raster, options, controller.signal);
+      const raster = steps.length
+        ? await workerRecipe(current.raster, applied, controller.signal)
+        : await workerTool(current.raster, options, controller.signal);
+      const diffRaster = await workerDifference(current.raster, raster, controller.signal);
       const blob = await rasterToBlob(raster);
+      const diffBlob = await rasterToBlob(diffRaster);
       const hash = await sha256(await blob.arrayBuffer());
       controller.signal.throwIfAborted();
       const url = URL.createObjectURL(blob);
-      setResult({ url, blob, hash });
-      await ws.record(`tool:${name}`, {
+      setResult({ url, diff: URL.createObjectURL(diffBlob), blob, hash });
+      await ws.record(steps.length ? "tool:recipe" : `tool:${name}`, {
         sourceSha256: current.rasterHash,
         outputSha256: hash,
-        amount: options.amount,
-        channel,
+        steps: JSON.stringify(applied),
       });
     } catch (error) {
       if (!controller.signal.aborted)
@@ -79,8 +95,8 @@ function ToolsPage() {
   return (
     <>
       <PageTitle kicker="03 / TOOLS" title="Pixel tools">
-        Apply a tool to the original image at full resolution. Outputs are PNGs with a SHA-256
-        receipt.
+        Build a sequence of tools or apply one to the original image. Outputs are PNGs with a
+        SHA-256 receipt.
       </PageTitle>
       {!ws.source ? (
         <Dropzone onFiles={(files) => files[0] && ws.loadFile(files[0])} />
@@ -95,7 +111,19 @@ function ToolsPage() {
               value={name}
               onChange={(event) => {
                 setName(event.target.value as ToolName);
-                if (event.target.value === "manuscript") setAmount(100);
+                setAmount(
+                  (
+                    {
+                      manuscript: 100,
+                      undertext: 65,
+                      "ink-fade": 12,
+                      parchment: 70,
+                      contrast: 20,
+                      threshold: 128,
+                      brightness: 128,
+                    } as Record<string, number>
+                  )[event.target.value] ?? 0,
+                );
                 invalidate();
               }}
               className="mt-1 w-full rounded border bg-background p-2 text-sm"
@@ -109,7 +137,10 @@ function ToolsPage() {
             {(name === "brightness" ||
               name === "contrast" ||
               name === "threshold" ||
-              name === "manuscript") && (
+              name === "manuscript" ||
+              name === "undertext" ||
+              name === "ink-fade" ||
+              name === "parchment") && (
               <label className="mt-4 block text-sm" htmlFor="amount">
                 {name === "brightness"
                   ? "Brightness (−128 to +127)"
@@ -117,13 +148,24 @@ function ToolsPage() {
                     ? "Contrast (0–100%)"
                     : name === "manuscript"
                       ? "Reading contrast (0–100%)"
-                      : "Threshold (0–255)"}
+                      : name === "undertext"
+                        ? "High-pass strength (0–100)"
+                        : name === "ink-fade"
+                          ? "Local ink offset (0–255)"
+                          : name === "parchment"
+                            ? "Background flattening (0–100%)"
+                            : "Threshold (0–255)"}
                 <input
                   id="amount"
                   type="range"
                   min="0"
-                  max={name === "contrast" || name === "manuscript" ? 100 : 255}
-                  value={Math.min(amount, name === "contrast" || name === "manuscript" ? 100 : 255)}
+                  max={
+                    ["contrast", "manuscript", "undertext", "parchment"].includes(name) ? 100 : 255
+                  }
+                  value={Math.min(
+                    amount,
+                    ["contrast", "manuscript", "undertext", "parchment"].includes(name) ? 100 : 255,
+                  )}
                   onChange={(event) => {
                     setAmount(Number(event.target.value));
                     invalidate();
@@ -133,7 +175,12 @@ function ToolsPage() {
                 <span className="font-mono text-xs">
                   {name === "brightness"
                     ? amount - 128
-                    : Math.min(amount, name === "contrast" || name === "manuscript" ? 100 : 255)}
+                    : Math.min(
+                        amount,
+                        ["contrast", "manuscript", "undertext", "parchment"].includes(name)
+                          ? 100
+                          : 255,
+                      )}
                 </span>
               </label>
             )}
@@ -143,6 +190,85 @@ function ToolsPage() {
                 the original before transcribing; the receipt records the output hash.
               </p>
             )}
+            <div className="mt-4 border-t pt-3">
+              <label className="block text-sm" htmlFor="preset">
+                Manuscript recipe
+              </label>
+              <select
+                id="preset"
+                value=""
+                onChange={(e) => {
+                  setSteps(RECIPES[e.target.value]?.steps.map((step) => ({ ...step })) ?? []);
+                  invalidate();
+                }}
+                className="mt-1 w-full rounded border bg-background p-2 text-sm"
+              >
+                <option value="">Choose a preset…</option>
+                {Object.entries(RECIPES).map(([id, preset]) => (
+                  <option key={id} value={id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+              <Button
+                className="mt-2 w-full"
+                variant="outline"
+                disabled={steps.length >= 12}
+                onClick={() => {
+                  setSteps((old) => [...old, option()]);
+                  invalidate();
+                }}
+              >
+                Add current tool to stack
+              </Button>
+              {steps.map((step, i) => (
+                <div key={i} className="mt-1 flex items-center gap-1 rounded border p-1 text-xs">
+                  <span className="min-w-0 flex-1 truncate">
+                    {i + 1}. {step.name}
+                    {step.amount !== undefined ? ` (${step.amount})` : ""}
+                  </span>
+                  <button
+                    aria-label={`Move step ${i + 1} up`}
+                    disabled={i === 0}
+                    onClick={() => {
+                      setSteps((old) => {
+                        const copy = [...old];
+                        [copy[i - 1], copy[i]] = [copy[i]!, copy[i - 1]!];
+                        return copy;
+                      });
+                      invalidate();
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    aria-label={`Remove step ${i + 1}`}
+                    onClick={() => {
+                      setSteps((old) => old.filter((_, j) => j !== i));
+                      invalidate();
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {steps.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSteps([]);
+                    invalidate();
+                  }}
+                >
+                  Clear stack
+                </Button>
+              )}
+              <p className="mt-2 text-xs text-muted-foreground">
+                These are exploratory derived views. Inspect the original before drawing conclusions
+                about faint marks.
+              </p>
+            </div>
             {name === "channel" && (
               <select
                 value={channel}
@@ -159,7 +285,11 @@ function ToolsPage() {
               </select>
             )}
             <Button onClick={run} disabled={running || !!ws.busy} className="mt-4 w-full">
-              {running ? "Processing…" : "Apply to original"}
+              {running
+                ? "Processing…"
+                : steps.length
+                  ? `Run ${steps.length} steps`
+                  : "Apply to original"}
             </Button>
             {result && (
               <Button
@@ -168,7 +298,7 @@ function ToolsPage() {
                 onClick={() =>
                   downloadBlob(
                     result.blob,
-                    `${ws.source!.name.replace(/\.[^.]+$/, "")}-${name}.png`,
+                    `${ws.source!.name.replace(/\.[^.]+$/, "")}-${steps.length ? "recipe" : name}.png`,
                   )
                 }
               >
@@ -177,30 +307,12 @@ function ToolsPage() {
             )}
           </Panel>
           <Panel title="Preview" kicker={result ? result.hash.slice(0, 12) : "original"}>
-            <div className={result ? "grid gap-3 md:grid-cols-2" : ""}>
-              <div>
-                <p className="mb-2 font-mono text-xs text-muted-foreground">Original</p>
-                <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
-                  <img
-                    src={ws.source.url}
-                    alt="Original imported image"
-                    className="max-h-[70vh] max-w-full object-contain"
-                  />
-                </div>
-              </div>
-              {result && (
-                <div>
-                  <p className="mb-2 font-mono text-xs text-muted-foreground">Derived: {name}</p>
-                  <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
-                    <img
-                      src={result.url}
-                      alt={`${name} output`}
-                      className="max-h-[70vh] max-w-full object-contain"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            <InspectionViewer
+              original={ws.source.url}
+              derived={result?.url}
+              derivedLabel={steps.length ? "Recipe" : name}
+              difference={result?.diff}
+            />
           </Panel>
         </div>
       )}

@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { FileJson, Trash2 } from "lucide-react";
+import { FileJson, Trash2, Printer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { inspectCredentials, type CredentialReport } from "@/lib/engine/credentials";
 import { Button } from "@/components/ui/button";
 import { PageTitle, Panel } from "@/components/shell";
 import { useWorkspace } from "@/lib/workspace";
+import { previewDataUrl } from "@/lib/workspace";
+import { verifyLedger, sha256 } from "@/lib/engine/provenance";
+import { auditHtml } from "@/lib/engine/report";
+import { downloadBlob } from "@/lib/engine/image-io";
 
 export const Route = createFileRoute("/receipts")({
   head: () => ({
@@ -26,7 +30,8 @@ export const Route = createFileRoute("/receipts")({
 });
 
 function ReceiptsPage() {
-  const { ledger, exportReceipt, clearLedger, source } = useWorkspace();
+  const { ledger, exportReceipt, clearLedger, source, enhancement, savedRegions, layerUrls } =
+    useWorkspace();
   const [credentials, setCredentials] = useState<CredentialReport | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -60,6 +65,39 @@ function ReceiptsPage() {
     } finally {
       if (inspectionId.current === id) setReading(false);
     }
+  };
+  const exportAudit = async () => {
+    let verified = true;
+    try {
+      await verifyLedger(ledger);
+    } catch {
+      verified = false;
+    }
+    const outputHash = layerUrls.enhanced
+      ? await sha256(await (await fetch(layerUrls.enhanced)).arrayBuffer())
+      : undefined;
+    const html = auditHtml({
+      source: source
+        ? {
+            name: source.name,
+            fileHash: source.fileHash,
+            rasterHash: source.rasterHash,
+            width: source.raster.width,
+            height: source.raster.height,
+          }
+        : null,
+      originalPreview: source ? previewDataUrl(source.raster, 480) : undefined,
+      derivedPreview: enhancement ? previewDataUrl(enhancement.enhanced, 480) : undefined,
+      outputHash,
+      ledger,
+      verified,
+      regions: savedRegions,
+      exportedAt: new Date().toISOString(),
+    });
+    downloadBlob(
+      new Blob([html], { type: "text/html;charset=utf-8" }),
+      `${(source?.name ?? "session").replace(/\.[^.]+$/, "")}-audit.html`,
+    );
   };
   return (
     <>
@@ -98,6 +136,51 @@ function ReceiptsPage() {
             {credentials.statusCodes.length > 0 && (
               <p>Status codes: {credentials.statusCodes.join(", ")}</p>
             )}
+            {credentials.manifests.map((manifest) => (
+              <details key={manifest.label} className="mt-2 rounded border p-2">
+                <summary className="cursor-pointer font-semibold">
+                  {manifest.label === credentials.activeLabel ? "Active · " : ""}
+                  {manifest.title} · {manifest.label}
+                </summary>
+                <div className="mt-2 space-y-1">
+                  <p>
+                    Certificate: {manifest.signature.commonName} · issuer{" "}
+                    {manifest.signature.issuer}
+                  </p>
+                  <p>
+                    Algorithm {manifest.signature.algorithm} · serial {manifest.signature.serial} ·
+                    signed {manifest.signature.time} · revoked {manifest.signature.revoked}
+                  </p>
+                  <h3 className="font-semibold">Ingredients</h3>
+                  {manifest.ingredients.length ? (
+                    <ul className="list-disc pl-5">
+                      {manifest.ingredients.map((item, i) => (
+                        <li key={i}>
+                          {item.title} · {item.relationship} · manifest {item.manifest}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p>None listed.</p>
+                  )}
+                  <h3 className="font-semibold">Assertions</h3>
+                  {manifest.assertions.length ? (
+                    manifest.assertions.map((assertion, i) => (
+                      <details key={i} className="border-t pt-1">
+                        <summary>
+                          {assertion.label} ({assertion.kind})
+                        </summary>
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all">
+                          {assertion.data}
+                        </pre>
+                      </details>
+                    ))
+                  ) : (
+                    <p>None listed.</p>
+                  )}
+                </div>
+              </details>
+            ))}
           </div>
         )}
       </Panel>
@@ -108,6 +191,14 @@ function ReceiptsPage() {
           <>
             <Button size="sm" onClick={exportReceipt} disabled={!ledger.length}>
               <FileJson className="h-4 w-4" /> Export receipt
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void exportAudit()}
+              disabled={!ledger.length}
+            >
+              <Printer className="h-4 w-4" /> Printable audit
             </Button>
             <Button
               size="sm"

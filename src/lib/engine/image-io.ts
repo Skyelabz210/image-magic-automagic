@@ -88,6 +88,7 @@ export function runWorker(request: Request, signal: AbortSignal): Promise<Respon
       worker.postMessage(request, [
         request.source.data.buffer,
         ...(request.kind === "region" && request.mask ? [request.mask.data.buffer] : []),
+        ...(request.kind === "difference" ? [request.derived.data.buffer] : []),
       ]);
     } catch (error) {
       cleanup();
