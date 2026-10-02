@@ -11,11 +11,28 @@ import { sha256 } from "@/lib/engine/provenance";
 import { RECIPES, TOOL_NAMES, type ToolName, type ToolOptions } from "@/lib/engine/tools";
 import { useWorkspace } from "@/lib/workspace";
 import { InspectionViewer } from "@/components/inspection-viewer";
+import type { Raster } from "@/lib/engine/processing";
 
 export const Route = createFileRoute("/tools")({
   component: ToolsPage,
   head: () => ({ meta: [{ title: "Image Tools — ENHANCE!" }] }),
 });
+
+function previewRaster(source: Raster): Raster {
+  const scale = Math.min(1, 1024 / Math.max(source.width, source.height));
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const original =
+        (Math.min(source.height - 1, Math.floor((y + 0.5) / scale)) * source.width +
+          Math.min(source.width - 1, Math.floor((x + 0.5) / scale))) *
+        4;
+      data.set(source.data.subarray(original, original + 4), (y * width + x) * 4);
+    }
+  return { width, height, data };
+}
 
 function ToolsPage() {
   const ws = useWorkspace();
@@ -23,6 +40,7 @@ function ToolsPage() {
   const [amount, setAmount] = useState(128);
   const [channel, setChannel] = useState<0 | 1 | 2>(0);
   const [steps, setSteps] = useState<ToolOptions[]>([]);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<{
     url: string;
     diff: string;
@@ -40,8 +58,15 @@ function ToolsPage() {
     },
     [result],
   );
+  useEffect(
+    () => () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
   useEffect(() => {
     setResult(null);
+    setPreviewUrl(null);
     setRunning(false);
     return () => controllerRef.current?.abort();
   }, [ws.source]);
@@ -49,7 +74,28 @@ function ToolsPage() {
     controllerRef.current?.abort();
     setRunning(false);
     setResult(null);
+    setPreviewUrl(null);
   };
+  useEffect(() => {
+    if (!ws.source || !steps.length || result || running) return;
+    const source = ws.source;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const raster = await workerRecipe(previewRaster(source.raster), steps, controller.signal);
+        const blob = await rasterToBlob(raster);
+        controller.signal.throwIfAborted();
+        setPreviewUrl(URL.createObjectURL(blob));
+      } catch (error) {
+        if (!controller.signal.aborted)
+          toast.error(error instanceof Error ? error.message : "Live preview failed.");
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [ws.source, steps, result, running, name, amount, channel]);
   const option = (): ToolOptions => ({
     name,
     amount:
@@ -80,6 +126,7 @@ function ToolsPage() {
       controller.signal.throwIfAborted();
       const url = URL.createObjectURL(blob);
       setResult({ url, diff: URL.createObjectURL(diffBlob), blob, hash });
+      setPreviewUrl(null);
       await ws.record(steps.length ? "tool:recipe" : `tool:${name}`, {
         sourceSha256: current.rasterHash,
         outputSha256: hash,
@@ -306,13 +353,22 @@ function ToolsPage() {
               </Button>
             )}
           </Panel>
-          <Panel title="Preview" kicker={result ? result.hash.slice(0, 12) : "original"}>
+          <Panel
+            title="Preview"
+            kicker={result ? result.hash.slice(0, 12) : previewUrl ? "live · reduced" : "original"}
+          >
             <InspectionViewer
               original={ws.source.url}
-              derived={result?.url}
-              derivedLabel={steps.length ? "Recipe" : name}
+              derived={result?.url ?? previewUrl ?? undefined}
+              derivedLabel={result ? (steps.length ? "Recipe" : name) : "Live recipe preview"}
               difference={result?.diff}
             />
+            {previewUrl && !result && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Live preview is sampled to a 1024px maximum dimension. Run the stack to render and
+                hash the full-resolution PNG.
+              </p>
+            )}
           </Panel>
         </div>
       )}
