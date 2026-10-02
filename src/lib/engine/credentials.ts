@@ -9,6 +9,20 @@ export type CredentialReport = {
   ingredients: string[];
   actions: string[];
   statusCodes: string[];
+  manifests: {
+    label: string;
+    title: string;
+    signature: {
+      algorithm: string;
+      issuer: string;
+      commonName: string;
+      serial: string;
+      time: string;
+      revoked: string;
+    };
+    ingredients: { title: string; relationship: string; manifest: string }[];
+    assertions: { label: string; kind: string; data: string }[];
+  }[];
   note: string;
 };
 
@@ -24,6 +38,7 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
       ingredients: [],
       actions: [],
       statusCodes: [],
+      manifests: [],
       note: "No embedded C2PA manifest was found in the original file.",
     };
   const activeLabel = store.active_manifest ?? null;
@@ -73,6 +88,30 @@ export function summarizeManifest(store: ManifestStore | null): CredentialReport
     ingredients: (active?.ingredients ?? []).map((item) => item.title ?? "Untitled ingredient"),
     actions,
     statusCodes,
+    manifests: Object.entries(store.manifests ?? {})
+      .slice(0, 100)
+      .map(([label, manifest]) => ({
+        label,
+        title: manifest.title ?? "Untitled",
+        signature: {
+          algorithm: manifest.signature_info?.alg ?? "—",
+          issuer: manifest.signature_info?.issuer ?? "—",
+          commonName: manifest.signature_info?.common_name ?? "—",
+          serial: manifest.signature_info?.cert_serial_number ?? "—",
+          time: manifest.signature_info?.time ?? "—",
+          revoked: String(manifest.signature_info?.revocation_status ?? "unknown"),
+        },
+        ingredients: (manifest.ingredients ?? []).slice(0, 100).map((ingredient) => ({
+          title: ingredient.title ?? "Untitled",
+          relationship: ingredient.relationship ?? "unknown",
+          manifest: ingredient.active_manifest ?? "—",
+        })),
+        assertions: (manifest.assertions ?? []).slice(0, 100).map((assertion) => ({
+          label: assertion.label,
+          kind: assertion.kind ?? "unknown",
+          data: JSON.stringify(assertion.data ?? null).slice(0, 2000),
+        })),
+      })),
     note:
       state === "trusted"
         ? "Manifest validated and signer trusted by the SDK trust configuration."

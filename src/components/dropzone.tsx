@@ -6,10 +6,12 @@ export function Dropzone({
   onFiles,
   multiple,
   compact,
+  accept = "image/png,image/jpeg,image/webp,image/bmp",
 }: {
   onFiles: (f: File[]) => void;
   multiple?: boolean;
   compact?: boolean;
+  accept?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -38,14 +40,16 @@ export function Dropzone({
         {multiple ? "Drop images or click to choose" : "Drop an image or click to choose"}
       </span>
       <span className="text-xs text-muted-foreground">
-        PNG, JPEG, WebP, BMP · up to 50 MB · 16 MP · full resolution kept
+        {accept.includes("pdf")
+          ? "PNG, JPEG, WebP, BMP, PDF · 50 MB · 16 MP per page"
+          : "PNG, JPEG, WebP, BMP · up to 50 MB · 16 MP · full resolution kept"}
       </span>
       <input
         ref={ref}
         type="file"
         hidden
         multiple={multiple}
-        accept="image/png,image/jpeg,image/webp,image/bmp"
+        accept={accept}
         onChange={(e) => {
           onFiles(Array.from(e.target.files ?? []));
           e.target.value = "";

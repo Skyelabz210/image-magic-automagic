@@ -13,8 +13,9 @@ import { workerRegion } from "@/lib/engine/pipeline";
 import { downloadBlob, readRaster } from "@/lib/engine/image-io";
 import { validateFile } from "@/lib/engine/processing";
 import { sha256 } from "@/lib/engine/provenance";
-import type { Region } from "@/lib/engine/region";
+import { makeSelectionMask, type Point, type Region } from "@/lib/engine/region";
 import { inspectJpeg, type JpegStructure } from "@/lib/engine/jpeg";
+import { InspectionViewer } from "@/components/inspection-viewer";
 
 export const Route = createFileRoute("/evidence")({
   head: () => ({
@@ -129,18 +130,17 @@ function EvidencePage() {
             )
           }
         >
-          <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
-            {probe ? (
-              <img
-                src={probe.url}
-                alt={`${probe.type} probe map`}
-                className="max-h-[68vh] max-w-full object-contain"
-                style={{ imageRendering: "pixelated" }}
-              />
-            ) : (
+          {probe ? (
+            <InspectionViewer
+              original={source.url}
+              derived={probe.url}
+              derivedLabel={`${probe.type} probe map`}
+            />
+          ) : (
+            <div className="checker flex min-h-[360px] items-center justify-center rounded-md">
               <span className="font-mono text-xs text-muted-foreground">choose a probe</span>
-            )}
-          </div>
+            </div>
+          )}
         </Panel>
         <Panel title="Measurements" kicker="readout">
           {probe ? (
@@ -271,12 +271,15 @@ function RegionInspector({
 }) {
   const { savedRegions: saved, setSavedRegions: setSaved } = useWorkspace();
   const [region, setRegion] = useState<Region | null>(null);
+  const [mode, setMode] = useState<"rectangle" | "polygon" | "brush">("rectangle");
+  const [points, setPoints] = useState<Point[]>([]);
+  const [brushRadius, setBrushRadius] = useState(12);
   const [selectedId, setSelectedId] = useState<string | null>(saved.at(-1)?.id ?? null);
   const metrics = saved.find((item) => item.id === selectedId)?.metrics ?? null;
   const [running, setRunning] = useState(false);
   const [provider, setProvider] = useState<"lovable" | "gemini">("lovable");
   const [question, setQuestion] = useState(
-    "How do these regions differ, and what should I inspect next?",
+    "What can be observed in the selected region, and what should I inspect next?",
   );
   const [answer, setAnswer] = useState<AiSuggestion | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -298,6 +301,16 @@ function RegionInspector({
     };
   };
   const drag = (event: PointerEvent<HTMLImageElement>) => {
+    if (mode === "brush" && start.current) {
+      const next = point(event);
+      setPoints((old) =>
+        old.length >= 4096 || (old.at(-1)?.x === next.x && old.at(-1)?.y === next.y)
+          ? old
+          : [...old, next],
+      );
+      return;
+    }
+    if (mode !== "rectangle") return;
     if (!start.current) return;
     const end = point(event);
     const x = Math.min(start.current.x, end.x),
@@ -311,6 +324,15 @@ function RegionInspector({
   };
   const finish = async (event: PointerEvent<HTMLImageElement>) => {
     if (!start.current) return;
+    if (mode === "polygon") return;
+    if (mode === "brush") {
+      start.current = null;
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      const stroke = [...points, point(event)];
+      setPoints([]);
+      await inspectShape(stroke, "brush");
+      return;
+    }
     drag(event);
     const end = point(event);
     const x = Math.min(start.current.x, end.x),
@@ -342,6 +364,71 @@ function RegionInspector({
       if (controller.current === current) setRunning(false);
     }
   };
+  const inspectShape = async (shape: Point[], kind: "polygon" | "brush") => {
+    controller.current?.abort();
+    const current = new AbortController();
+    controller.current = current;
+    setRunning(true);
+    try {
+      const { mask, region: bounds } = makeSelectionMask(
+        source.raster.width,
+        source.raster.height,
+        shape,
+        kind,
+        brushRadius,
+      );
+      const result = await workerRegion(source.raster, bounds, current.signal, mask);
+      current.signal.throwIfAborted();
+      const id = crypto.randomUUID();
+      setSaved((items) => [
+        ...items,
+        {
+          id,
+          name: `${kind === "polygon" ? "Polygon" : "Brush"} ${items.length + 1}`,
+          metrics: result,
+          masked: true,
+          shape: { mode: kind, points: shape, radius: brushRadius },
+        },
+      ]);
+      setSelectedId(id);
+      await record(`region:${kind}`, {
+        ...bounds,
+        points: shape.length,
+        radius: kind === "brush" ? brushRadius : 0,
+        selectedPixels: result.opaquePixels,
+        sourceSha256: source.rasterHash,
+      });
+    } catch (error) {
+      if (!current.signal.aborted)
+        toast.error(error instanceof Error ? error.message : "Selection failed.");
+    } finally {
+      if (controller.current === current) setRunning(false);
+    }
+  };
+  const selected = saved.find((item) => item.id === selectedId);
+  const previewSelected = () => {
+    const r = selected?.metrics.region;
+    if (!r) return previewDataUrl(source.raster);
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 768 / Math.max(r.width, r.height));
+    canvas.width = Math.max(1, Math.round(r.width * scale));
+    canvas.height = Math.max(1, Math.round(r.height * scale));
+    const native = document.createElement("canvas");
+    native.width = source.raster.width;
+    native.height = source.raster.height;
+    native
+      .getContext("2d")!
+      .putImageData(
+        new ImageData(new Uint8ClampedArray(source.raster.data), native.width, native.height),
+        0,
+        0,
+      );
+    canvas
+      .getContext("2d")!
+      .drawImage(native, r.x, r.y, r.width, r.height, 0, 0, canvas.width, canvas.height);
+    native.width = native.height = 0;
+    return canvas.toDataURL("image/jpeg", 0.82);
+  };
   const askAboutRegions = async () => {
     setAiBusy(true);
     setAnswer(null);
@@ -350,6 +437,9 @@ function RegionInspector({
         width: source.raster.width,
         height: source.raster.height,
         fileSha256: source.fileHash,
+        selectedRegion: selected
+          ? `${selected.name.slice(0, 32)} at (${selected.metrics.region.x},${selected.metrics.region.y}) ${selected.metrics.region.width}x${selected.metrics.region.height}; ${selected.shape ? `${selected.shape.mode} mask, cropped bounding box preview` : "rectangle"}`
+          : "full image",
       };
       saved.slice(0, 12).forEach((item, i) => {
         const { region: r, channels: c, opaquePixels, excludedPixels } = item.metrics;
@@ -357,12 +447,12 @@ function RegionInspector({
           `${item.name.slice(0, 32)} at (${r.x},${r.y}) ${r.width}x${r.height}; opaque=${opaquePixels}; excluded=${excludedPixels}; red mean=${c[0].mean?.toFixed(2) ?? "N/A"}, entropy=${c[0].entropy?.toFixed(3) ?? "N/A"}; green mean=${c[1].mean?.toFixed(2) ?? "N/A"}, entropy=${c[1].entropy?.toFixed(3) ?? "N/A"}; blue mean=${c[2].mean?.toFixed(2) ?? "N/A"}, entropy=${c[2].entropy?.toFixed(3) ?? "N/A"}`;
       });
       const response = await suggest({
-        data: { image: previewDataUrl(source.raster), metrics, provider, question },
+        data: { image: previewSelected(), metrics, provider, question },
       });
       setAnswer(response);
       await record("ai-region-question", {
         provider,
-        promptVersion: "region-v1",
+        promptVersion: "region-crop-v2",
         question,
         regions: Math.min(saved.length, 12),
         sourceSha256: source.rasterHash,
@@ -447,9 +537,58 @@ function RegionInspector({
         }
       >
         <p className="mb-3 text-xs text-muted-foreground">
-          Drag across the original to measure a region. Coordinates and counts use original pixels;
-          no resampling.
+          Drag a rectangle, click polygon vertices and finish, or paint a brush stroke. Coordinates
+          and counts use original pixels; no resampling.
         </p>
+        <div className="mb-2 flex flex-wrap gap-2 text-xs">
+          {(["rectangle", "polygon", "brush"] as const).map((value) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={mode === value ? "default" : "outline"}
+              onClick={() => {
+                setMode(value);
+                setPoints([]);
+                setRegion(null);
+              }}
+            >
+              {value}
+            </Button>
+          ))}
+          {mode === "polygon" && (
+            <Button
+              size="sm"
+              disabled={points.length < 3}
+              onClick={() => {
+                void inspectShape(points, "polygon");
+                setPoints([]);
+              }}
+            >
+              Finish polygon ({points.length})
+            </Button>
+          )}
+          {mode === "polygon" && (
+            <Button size="sm" variant="ghost" onClick={() => setPoints([])}>
+              Clear points
+            </Button>
+          )}
+          {mode === "brush" && (
+            <label>
+              Brush radius{" "}
+              <input
+                type="number"
+                min={1}
+                max={256}
+                value={brushRadius}
+                onChange={(e) =>
+                  setBrushRadius(Math.max(1, Math.min(256, Number(e.target.value) || 1)))
+                }
+                className="w-16 rounded border bg-background p-1"
+              />{" "}
+              px
+            </label>
+          )}
+        </div>
         <div className="checker flex min-h-56 items-center justify-center rounded-md p-2">
           <div className="relative inline-block max-w-full select-none">
             <img
@@ -458,7 +597,12 @@ function RegionInspector({
               className="block max-h-[65vh] max-w-full touch-none object-contain"
               onPointerDown={(event) => {
                 controller.current?.abort();
+                if (mode === "polygon") {
+                  setPoints((old) => (old.length >= 4096 ? old : [...old, point(event)]));
+                  return;
+                }
                 start.current = point(event);
+                if (mode === "brush") setPoints([start.current]);
                 event.currentTarget.setPointerCapture(event.pointerId);
                 drag(event);
               }}
@@ -467,8 +611,57 @@ function RegionInspector({
               onPointerCancel={() => {
                 start.current = null;
                 setRegion(null);
+                setPoints([]);
               }}
             />
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full"
+              viewBox={`0 0 ${source.raster.width} ${source.raster.height}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {saved
+                .filter((item) => item.shape)
+                .map((item) =>
+                  item.shape!.mode === "polygon" ? (
+                    <polygon
+                      key={item.id}
+                      points={item.shape!.points.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="rgba(64,220,190,.2)"
+                      stroke="cyan"
+                      strokeWidth={Math.max(2, source.raster.width / 500)}
+                    />
+                  ) : (
+                    <polyline
+                      key={item.id}
+                      points={item.shape!.points.map((p) => `${p.x},${p.y}`).join(" ")}
+                      fill="none"
+                      stroke="cyan"
+                      strokeWidth={item.shape!.radius * 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity=".4"
+                    />
+                  ),
+                )}
+              {points.length > 0 &&
+                (mode === "polygon" ? (
+                  <polyline
+                    points={points.map((p) => `${p.x},${p.y}`).join(" ")}
+                    fill="none"
+                    stroke="yellow"
+                    strokeWidth={Math.max(2, source.raster.width / 500)}
+                  />
+                ) : (
+                  <polyline
+                    points={points.map((p) => `${p.x},${p.y}`).join(" ")}
+                    fill="none"
+                    stroke="yellow"
+                    strokeWidth={brushRadius * 2}
+                    strokeLinecap="round"
+                  />
+                ))}
+            </svg>
             {saved
               .filter((item) => !item.masked)
               .map((item) => (
@@ -550,8 +743,8 @@ function RegionInspector({
               {aiBusy ? "Analyzing…" : "Ask about regions"}
             </Button>
             <p className="text-xs text-muted-foreground">
-              Sends a reduced preview, region coordinates and measurements to the selected provider.
-              Answers are suggestions, not verified findings.
+              Sends a reduced crop of the selected region, plus coordinates and measurements, to the
+              selected provider. Answers are suggestions, not verified findings.
             </p>
             {answer && (
               <div className="rounded border p-2 text-sm">
@@ -642,6 +835,78 @@ function RegionInspector({
                 </div>
               </div>
             ))}
+            <div className="rounded border p-2 text-xs">
+              <p className="mb-1 font-semibold">Tonal histogram · R / G / B / luminance</p>
+              <svg
+                viewBox="0 0 256 80"
+                role="img"
+                aria-label="Tonal histogram for red, green, blue and luminance"
+                className="w-full rounded bg-background"
+              >
+                {metrics.histograms?.map((hist, channel) => {
+                  const peak = Math.max(1, ...hist);
+                  const points = hist
+                    .map((n, i) => `${i},${79 - 70 * Math.sqrt(n / peak)}`)
+                    .join(" ");
+                  return (
+                    <polyline
+                      key={channel}
+                      points={points}
+                      fill="none"
+                      stroke={["#f77878", "#54d89b", "#6da8ff", "#ffffff"][channel]}
+                      strokeWidth="1"
+                      opacity=".85"
+                    />
+                  );
+                })}
+              </svg>
+              <p className="mt-2 font-semibold">Local luminance entropy · 8 × 8 grid</p>
+              <div
+                className="mt-1 grid grid-cols-8 gap-px"
+                role="img"
+                aria-label="Spatial entropy heatmap in bits"
+              >
+                {metrics.localEntropy?.map((value, i) => (
+                  <span
+                    key={i}
+                    title={
+                      value === null ? "No selected opaque pixels" : `${value.toFixed(2)} bits`
+                    }
+                    className="aspect-square"
+                    style={{
+                      backgroundColor:
+                        value === null
+                          ? "transparent"
+                          : `hsl(${200 - value * 18} 85% ${18 + value * 7}%)`,
+                    }}
+                  />
+                ))}
+              </div>
+              <p className="mt-2 font-semibold">Local entropy distribution</p>
+              <svg
+                viewBox="0 0 160 50"
+                role="img"
+                aria-label="Distribution of local entropy values"
+                className="w-full rounded bg-background"
+              >
+                {Array.from({ length: 16 }, (_, i) => {
+                  const count =
+                    metrics.localEntropy?.filter(
+                      (v) => v !== null && Math.min(15, Math.floor(v * 2)) === i,
+                    ).length ?? 0;
+                  return (
+                    <rect
+                      key={i}
+                      x={i * 10}
+                      y={50 - count * 0.75}
+                      width="9"
+                      height={count * 0.75}
+                      fill="#6dd9bf"
+                    />
+                  );
+                })}
+              </svg>
+            </div>
             <p className="text-xs text-muted-foreground">
               Regional measurements describe pixel patterns; they are not a manipulation verdict.
             </p>

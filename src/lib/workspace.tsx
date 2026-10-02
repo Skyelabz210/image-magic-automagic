@@ -12,7 +12,7 @@ import {
 import { toast } from "sonner";
 import type { AutoTune, Channel, Enhancement, Probe, ProbeType, Raster } from "./engine/processing";
 import { ALGORITHM_VERSION, validateFile } from "./engine/processing";
-import type { RegionMeasurements } from "./engine/region";
+import type { Point, RegionMeasurements } from "./engine/region";
 import { downloadBlob, isAbort, outputName, rasterToBlob, readRaster } from "./engine/image-io";
 import {
   addEntry,
@@ -29,15 +29,17 @@ import {
   runFullPipeline,
   workerAutoTune,
   workerEnhance,
+  workerDifference,
   workerProbe,
 } from "./engine/pipeline";
 
-export type Layer = "original" | "enhanced" | "entropy" | "mask";
+export type Layer = "original" | "enhanced" | "entropy" | "mask" | "difference";
 export type SavedRegion = {
   id: string;
   name: string;
   metrics: RegionMeasurements;
   masked?: boolean;
+  shape?: { mode: "polygon" | "brush"; points: Point[]; radius: number };
 };
 export type Source = {
   name: string;
@@ -71,7 +73,7 @@ type Ctx = {
   runEnhance: (p?: { threshold: number; strength: number }) => Promise<void>;
   runProbe: (type: ProbeType, channel?: Channel) => Promise<void>;
   runAutoTune: () => Promise<AutoTune | null>;
-  runAll: () => Promise<void>;
+  runAll: () => Promise<{ enhancement: Enhancement; tune: AutoTune } | null>;
   cancel: () => void;
   record: (op: string, params: Parameters) => Promise<void>;
   exportReceipt: () => Promise<void>;
@@ -231,20 +233,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     readyHash?: string,
   ) => {
     const result = ready ?? (await workerEnhance(raster, t, s, signal));
-    const [enh, ent, mask] = await Promise.all([
+    const [enh, ent, mask, diff] = await Promise.all([
       blobUrl(result.enhanced),
       blobUrl(result.entropy),
       blobUrl(result.mask),
+      workerDifference(raster, result.enhanced, signal).then(blobUrl),
     ]);
     if (signal.aborted) {
-      [enh, ent, mask].forEach(URL.revokeObjectURL);
+      [enh, ent, mask, diff].forEach(URL.revokeObjectURL);
       signal.throwIfAborted();
     }
     setEnhancement(result);
     setEnhancedFor(`${t}|${s}`);
     setLayerUrls((u) => {
-      [u.enhanced, u.entropy, u.mask].forEach((v) => v && URL.revokeObjectURL(v));
-      return { ...(u.original ? { original: u.original } : {}), enhanced: enh, entropy: ent, mask };
+      [u.enhanced, u.entropy, u.mask, u.difference].forEach((v) => v && URL.revokeObjectURL(v));
+      return {
+        ...(u.original ? { original: u.original } : {}),
+        enhanced: enh,
+        entropy: ent,
+        mask,
+        difference: diff,
+      };
     });
     const hash = readyHash ?? (await pngHash(result.enhanced)).hash;
     await record("enhance", {
@@ -324,7 +333,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   };
 
   const runAll = async () => {
-    if (!source) return;
+    if (!source) return null;
     const signal = begin("Auto-tuning");
     try {
       const r = await runFullPipeline(source.raster, channel, signal, (s) => {
@@ -368,8 +377,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
       end(signal);
       toast.success("Full run complete: enhanced, probed, and recorded.");
+      return { enhancement: r.enhancement, tune: r.tune };
     } catch (e) {
       end(signal, e);
+      return null;
     }
   };
 

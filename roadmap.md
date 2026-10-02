@@ -7,5 +7,10 @@
 - [x] Batch processing
 - [x] One-click full run
 - [x] AI suggestions — Gemini default; Lovable AI needs workspace credits
-- [x] Automated AI suggestions via Gemini free tier (auto after full run, lite fallback)
+- [x] Opt-in automated AI suggestions with Gemini fallback
+- [x] Split comparison, zoom/pan, minimap and difference heatmap
+- [x] Polygon and brush masks, regional histograms, entropy and cropped AI preview
+- [x] Recipe stacks and manuscript presets in browser worker and CLI
+- [x] Browser PDF page decomposition, CSV and ZIP batch deliverables
+- [x] Printable audit and detailed C2PA manifest inspector
 - [x] Refine: parallel full run, mobile nav, beginner hints

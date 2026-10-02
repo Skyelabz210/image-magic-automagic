@@ -12,7 +12,14 @@ import {
   type ProbeType,
   type Raster,
 } from "../src/lib/engine/processing";
-import { applyTool, TOOL_NAMES, type ToolName } from "../src/lib/engine/tools";
+import {
+  applyTool,
+  applyRecipe,
+  RECIPES,
+  TOOL_NAMES,
+  type ToolName,
+  type ToolOptions,
+} from "../src/lib/engine/tools";
 import { rasterDigest, sha256 } from "../src/lib/engine/provenance";
 import { requestSuggestion } from "../src/lib/ai-providers.server";
 import { measureRegion } from "../src/lib/engine/region";
@@ -22,7 +29,7 @@ import { inspectCredentialsNode } from "./credentials";
 
 const HELP = `ENHANCE! CLI — local pixel operations; AI is opt-in
 Usage: npm run cli -- COMMAND INPUT [INPUT...] [options]
-Commands: inspect, credentials, jpeg-structure, stress, region, mask-region, tune, enhance, probe, pipeline, tool, batch, suggest
+Commands: inspect, credentials, jpeg-structure, stress, region, mask-region, tune, enhance, probe, pipeline, tool, recipe, batch, suggest
 Options:
   --output PATH        PNG path; report JSON path for stress; directory for batch
   --threshold N        Enhancement threshold, 0–6.3
@@ -31,6 +38,8 @@ Options:
                       quantization measures decoded pixel-step GCD, not JPEG DCT/DQT
   --channel NAME       red | green | blue (default green)
   --tool NAME          ${TOOL_NAMES.join(" | ")}
+  --recipe NAME        ${Object.keys(RECIPES).join(" | ")}
+  --steps LIST         Ordered tool[:amount] steps, e.g. median,contrast:20,edges
   --amount N           Integer for brightness (-255..255), contrast (0..100), threshold (0..255)
                       manuscript reading strength (0..100; default 100)
   --ai-provider NAME   gemini | lovable (suggest only; default gemini)
@@ -50,6 +59,7 @@ Examples:
   npm run cli -- batch a.jpg b.png --output ./results
   npm run cli -- tool photo.jpg --tool median --output denoised.png
   npm run cli -- tool codex-page.jpg --tool manuscript --amount 100 --output reading.png
+  npm run cli -- recipe codex-page.jpg --recipe ink-fade-recovery --output faded-ink.png
   GEMINI_API_KEY=... npm run cli -- suggest photo.jpg
 `;
 
@@ -65,6 +75,8 @@ function parse(argv: string[]) {
     "probe",
     "channel",
     "tool",
+    "recipe",
+    "steps",
     "amount",
     "ai-provider",
     "region",
@@ -268,6 +280,25 @@ async function run(command: string, path: string, options: Options) {
     if (!Number.isInteger(amount)) throw new Error("Tool amount must be an integer.");
     result = applyTool(raster, { name, amount, channel: channel(options) });
     record.tool = { name, amount, channel: CHANNELS[channel(options)] };
+  } else if (command === "recipe") {
+    if (!!options.steps === !!options.recipe)
+      throw new Error("Choose exactly one of --recipe NAME or --steps LIST.");
+    const steps: ToolOptions[] = options.recipe
+      ? (RECIPES[options.recipe]?.steps ??
+        (() => {
+          throw new Error(`Choose a recipe: ${Object.keys(RECIPES).join(", ")}.`);
+        })())
+      : options.steps!.split(",").map((part) => {
+          const [tool, raw, ...extra] = part.split(":");
+          if (!tool || extra.length) throw new Error("Use --steps tool[:amount],tool[:amount].");
+          const name = select(tool, TOOL_NAMES, "grayscale");
+          const amount = raw === undefined ? undefined : Number(raw);
+          if (raw !== undefined && (!Number.isInteger(amount) || !Number.isFinite(amount)))
+            throw new Error("Step amounts must be integers.");
+          return { name, ...(amount !== undefined ? { amount } : {}), channel: channel(options) };
+        });
+    result = applyRecipe(raster, steps);
+    record.recipe = { preset: options.recipe ?? null, steps };
   } else if (command === "probe") {
     const kind: ProbeType = select(options.probe, PROBES, "keld");
     const analysis = probe(raster, kind, channel(options));
@@ -323,6 +354,7 @@ async function main() {
       "probe",
       "pipeline",
       "tool",
+      "recipe",
       "batch",
       "suggest",
     ].includes(command)
