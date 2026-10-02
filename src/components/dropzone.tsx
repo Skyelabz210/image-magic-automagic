@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { expandPdfs } from "@/lib/engine/pdf";
 
 export function Dropzone({
   onFiles,
@@ -13,6 +15,18 @@ export function Dropzone({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
+  const [converting, setConverting] = useState(false);
+  const handle = async (files: File[]) => {
+    if (!files.some((f) => /pdf/i.test(f.type) || /\.pdf$/i.test(f.name))) return onFiles(files);
+    setConverting(true);
+    try {
+      onFiles(await expandPdfs(files));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "This PDF could not be read.");
+    } finally {
+      setConverting(false);
+    }
+  };
   return (
     <button
       type="button"
@@ -25,7 +39,7 @@ export function Dropzone({
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
-        onFiles(Array.from(e.dataTransfer.files));
+        void handle(Array.from(e.dataTransfer.files));
       }}
       className={cn(
         "flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-center transition-colors hover:border-accent hover:bg-secondary/40",
@@ -35,19 +49,23 @@ export function Dropzone({
     >
       <Upload className="h-6 w-6 text-accent" />
       <span className="font-mono text-sm">
-        {multiple ? "Drop images or click to choose" : "Drop an image or click to choose"}
+        {converting
+          ? "Converting PDF pages…"
+          : multiple
+            ? "Drop images or PDFs, or click to choose"
+            : "Drop an image or PDF, or click to choose"}
       </span>
       <span className="text-xs text-muted-foreground">
-        PNG, JPEG, WebP, BMP · up to 50 MB · 16 MP · full resolution kept
+        PNG, JPEG, WebP, BMP, PDF · up to 50 MB · 16 MP · full resolution kept
       </span>
       <input
         ref={ref}
         type="file"
         hidden
         multiple={multiple}
-        accept="image/png,image/jpeg,image/webp,image/bmp"
+        accept="image/png,image/jpeg,image/webp,image/bmp,application/pdf,.pdf"
         onChange={(e) => {
-          onFiles(Array.from(e.target.files ?? []));
+          void handle(Array.from(e.target.files ?? []));
           e.target.value = "";
         }}
       />
