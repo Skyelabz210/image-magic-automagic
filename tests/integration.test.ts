@@ -29,6 +29,33 @@ test("pixel tools preserve alpha, dimensions and input; median removes a hot pix
   assert.throws(() => applyTool(src, { name: "brightness", amount: 256 }), /integer/);
 });
 
+test("manuscript reading lifts uneven paper, separates ink and preserves source pixels", () => {
+  const width = 48,
+    height = 32;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const paper = 175 + Math.round((x / (width - 1)) * 30);
+      data.set([paper, paper - 5, paper - 12, 255], i);
+    }
+  const black = (16 * width + 16) * 4;
+  const red = (16 * width + 32) * 4;
+  data.set([70, 65, 62, 255], black);
+  data.set([133, 55, 48, 255], red);
+  data.set([17, 89, 240, 0], 0);
+  const source = { width, height, data };
+  const snapshot = new Uint8ClampedArray(data);
+  const output = applyTool(source, { name: "manuscript" });
+  const paper = (16 * width + 18) * 4;
+  assert.ok(output.data[paper]! - output.data[black]! > data[paper]! - data[black]!);
+  assert.ok(output.data[red]! > output.data[red + 1]!);
+  assert.deepEqual(Array.from(output.data.slice(0, 4)), Array.from(data.slice(0, 4)));
+  assert.deepEqual(data, snapshot);
+  assert.deepEqual(applyTool(source, { name: "manuscript", amount: 0 }).data, data);
+  assert.throws(() => applyTool(source, { name: "manuscript", amount: 101 }), /Manuscript/);
+});
+
 test("regional counts use native coordinates and exclude partially transparent samples", () => {
   const data = new Uint8ClampedArray([
     0, 80, 170, 255, 1, 80, 170, 128, 2, 80, 170, 255, 3, 80, 170, 255,

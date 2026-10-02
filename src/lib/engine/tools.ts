@@ -9,9 +9,73 @@ export const TOOL_NAMES = [
   "threshold",
   "edges",
   "median",
+  "manuscript",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export type ToolOptions = { name: ToolName; amount?: number; channel?: 0 | 1 | 2 };
+
+/**
+ * Derived reading view for photographs of ink on uneven paper. A local,
+ * alpha-weighted background is estimated with two sliding box passes.
+ * The smooth tone curve raises ink-to-paper contrast without hard clipping.
+ * Original bytes and raster are never changed.
+ */
+function manuscriptReading(source: Raster, amount: number): Raster {
+  const { width, height, data } = source;
+  if (amount === 0) return { width, height, data: new Uint8ClampedArray(data) };
+  const radius = Math.min(96, Math.max(8, Math.round(Math.min(width, height) * 0.07)));
+  const horizontal = new Float32Array(width * height);
+  const weights = new Float32Array(width * height);
+  const output = new Uint8ClampedArray(data);
+  const alpha = (p: number) => data[p * 4 + 3]! / 255;
+  for (let c = 0; c < 3; c++) {
+    for (let y = 0; y < height; y++) {
+      const row = y * width;
+      let weighted = 0;
+      let weight = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const p = row + Math.max(0, Math.min(width - 1, k));
+        const a = alpha(p);
+        weighted += data[p * 4 + c]! * a;
+        weight += a;
+      }
+      for (let x = 0; x < width; x++) {
+        horizontal[row + x] = weighted;
+        if (c === 0) weights[row + x] = weight;
+        const outgoing = row + Math.max(0, x - radius);
+        const incoming = row + Math.min(width - 1, x + radius + 1);
+        weighted += data[incoming * 4 + c]! * alpha(incoming);
+        weighted -= data[outgoing * 4 + c]! * alpha(outgoing);
+        weight += alpha(incoming) - alpha(outgoing);
+      }
+    }
+    for (let x = 0; x < width; x++) {
+      let weighted = 0;
+      let weight = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const p = Math.max(0, Math.min(height - 1, k)) * width + x;
+        weighted += horizontal[p]!;
+        weight += weights[p]!;
+      }
+      for (let y = 0; y < height; y++) {
+        const p = y * width + x;
+        const i = p * 4;
+        if (data[i + 3]) {
+          const original = data[i + c]!;
+          const background = weight > 1e-6 ? weighted / weight : original;
+          const lifted = 0.3 * original + 0.7 * (214 + 1.35 * (original - background));
+          const reading = 255 / (1 + Math.exp(-(lifted - 128) / 50));
+          output[i + c] = Math.round(original + (reading - original) * (amount / 100));
+        }
+        const outgoing = Math.max(0, y - radius) * width + x;
+        const incoming = Math.min(height - 1, y + radius + 1) * width + x;
+        weighted += horizontal[incoming]! - horizontal[outgoing]!;
+        weight += weights[incoming]! - weights[outgoing]!;
+      }
+    }
+  }
+  return { width, height, data: output };
+}
 
 /** Same RGBA8 transformations in the browser worker and the CLI. Alpha is preserved. */
 export function applyTool(source: Raster, options: ToolOptions): Raster {
@@ -20,12 +84,15 @@ export function applyTool(source: Raster, options: ToolOptions): Raster {
     throw new Error("Invalid RGBA pixel buffer.");
   if (!TOOL_NAMES.includes(options.name)) throw new Error("Unknown image tool.");
   const { name } = options;
-  const amount = options.amount ?? (name === "threshold" ? 128 : 0);
+  const amount = options.amount ?? (name === "threshold" ? 128 : name === "manuscript" ? 100 : 0);
   if (!Number.isInteger(amount) || amount < (name === "brightness" ? -255 : 0) || amount > 255)
     throw new Error("Tool amount must be an integer in range.");
   if (name === "contrast" && amount > 100) throw new Error("Contrast must be between 0 and 100.");
+  if (name === "manuscript" && amount > 100)
+    throw new Error("Manuscript reading strength must be between 0 and 100.");
   const channel = options.channel ?? 0;
   if (![0, 1, 2].includes(channel)) throw new Error("Channel must be red, green, or blue.");
+  if (name === "manuscript") return manuscriptReading(source, amount);
   const { width, height, data } = source;
   const output = new Uint8ClampedArray(data);
   const gray = (p: number) => {

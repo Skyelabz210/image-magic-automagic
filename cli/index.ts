@@ -32,6 +32,7 @@ Options:
   --channel NAME       red | green | blue (default green)
   --tool NAME          ${TOOL_NAMES.join(" | ")}
   --amount N           Integer for brightness (-255..255), contrast (0..100), threshold (0..255)
+                      manuscript reading strength (0..100; default 100)
   --ai-provider NAME   gemini | lovable (suggest only; default gemini)
   --region X,Y,W,H     Native pixel rectangle for the region command
   --mask PATH          Exact-size white-on-black or transparent segmentation mask (mask-region)
@@ -48,6 +49,7 @@ Examples:
   npm run cli -- pipeline photo.jpg --output result.png
   npm run cli -- batch a.jpg b.png --output ./results
   npm run cli -- tool photo.jpg --tool median --output denoised.png
+  npm run cli -- tool codex-page.jpg --tool manuscript --amount 100 --output reading.png
   GEMINI_API_KEY=... npm run cli -- suggest photo.jpg
 `;
 
@@ -259,9 +261,9 @@ async function run(command: string, path: string, options: Options) {
     const name = select(options.tool, TOOL_NAMES, "grayscale") as ToolName;
     const amount = numeric(
       options.amount,
-      name === "threshold" ? 128 : 0,
+      name === "threshold" ? 128 : name === "manuscript" ? 100 : 0,
       name === "brightness" ? -255 : 0,
-      name === "contrast" ? 100 : 255,
+      name === "contrast" || name === "manuscript" ? 100 : 255,
     );
     if (!Number.isInteger(amount)) throw new Error("Tool amount must be an integer.");
     result = applyTool(raster, { name, amount, channel: channel(options) });
