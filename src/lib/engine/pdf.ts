@@ -9,7 +9,8 @@ export async function pdfToImages(file: File): Promise<File[]> {
   pdfjs.GlobalWorkerOptions.workerSrc = (
     await import("pdfjs-dist/build/pdf.worker.min.mjs?url")
   ).default;
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const doc = await task.promise;
   const base = file.name.replace(/\.pdf$/i, "") || "document";
   const out: File[] = [];
   try {
@@ -33,7 +34,7 @@ export async function pdfToImages(file: File): Promise<File[]> {
       out.push(new File([blob], name, { type: "image/png" }));
     }
   } finally {
-    await doc.destroy();
+    await task.destroy();
   }
   if (!out.length) throw new Error("This PDF has no pages.");
   return out;
